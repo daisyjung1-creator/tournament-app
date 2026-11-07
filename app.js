@@ -143,6 +143,7 @@ async function route() {
 
 // ---------- login ----------
 function loginPage() {
+  app.onclick = null; app.onchange = null;
   app.innerHTML = `
     <header class="top"><span class="eyebrow">Tournament Day</span><h1>Coach sign in</h1></header>
     <form class="pad stack" id="login">
@@ -177,11 +178,14 @@ async function homePage() {
     </header>
     <div class="list">
       ${list.length ? list.map((t) => `
-        <a class="card" style="text-decoration:none;color:inherit" href="#/t/${t.id}/next">
-          <div class="head"><div><div class="name">${esc(t.name)}</div>
-          <div class="meta">${esc(t.event_date || 'No date')} · ${t.courts} courts</div></div>
-          <span class="where">Open ›</span></div>
-        </a>`).join('') : '<div class="empty">No tournaments yet. Create one below.</div>'}
+        <div class="card" style="gap:4px">
+          <a style="text-decoration:none;color:inherit" href="#/t/${t.id}/next">
+            <div class="head"><div><div class="name">${esc(t.name)}</div>
+            <div class="meta">${esc(t.event_date || 'No date')} · ${t.courts} courts</div></div>
+            <span class="where">Open ›</span></div>
+          </a>
+          <div><button class="linkbtn red" data-act="delt" data-t="${t.id}" data-name="${esc(t.name)}">Delete</button></div>
+        </div>`).join('') : '<div class="empty">No tournaments yet. Create one below.</div>'}
     </div>
     <form class="section stack" id="newt" style="border-top:1px solid var(--line)">
       <h2>New tournament</h2>
@@ -193,6 +197,15 @@ async function homePage() {
       <button class="btn dark block" type="submit">Create</button>
     </form>`;
   app.querySelector('[data-act=logout]').onclick = () => sb.auth.signOut();
+  app.onchange = null;
+  app.onclick = async (e) => {
+    const el = e.target.closest('[data-act=delt]');
+    if (!el) return;
+    if (!confirm(`Delete "${el.dataset.name}" and all its athletes and matches? This can't be undone.`)) return;
+    await must(sb.from('t_tournaments').delete().eq('id', el.dataset.t));
+    toast('Tournament deleted');
+    homePage();
+  };
   app.querySelector('#newt').onsubmit = async (e) => {
     e.preventDefault();
     const row = await must(sb.from('t_tournaments').insert({
@@ -411,7 +424,7 @@ async function setupPage(id) {
           <span id="sgh" class="small muted">"Alert at" = how many matches away an athlete moves into the Up Next section.</span>
           <div class="field"><label for="so">Message sign-off</label><input id="so" value="${esc(t.signoff)}"></div>
           <div class="rowx"><button class="btn dark" style="flex:1" type="submit">Save settings</button>
-          <button class="btn danger" type="button" data-act="archive">Archive</button></div>
+          <button class="btn danger" type="button" data-act="deltour">Delete tournament</button></div>
         </form>
       </details>
 
@@ -523,9 +536,10 @@ async function setupPage(id) {
     if (!el || !cache.t) return;
     const act = el.dataset.act;
     const a = el.dataset.a && cache.byId[el.dataset.a];
-    if (act === 'archive') {
-      if (!confirm('Archive this tournament? Parent links will stop working.')) return;
-      await must(sb.from('t_tournaments').update({ archived: true }).eq('id', id));
+    if (act === 'deltour') {
+      if (!confirm(`Delete "${cache.t.name}" and all its athletes and matches? This can't be undone.`)) return;
+      await must(sb.from('t_tournaments').delete().eq('id', id));
+      toast('Tournament deleted');
       location.hash = '#/'; return;
     }
     if (act === 'channel') { await must(sb.from('t_athletes').update({ channel: a.channel === 'sms' ? 'whatsapp' : 'sms' }).eq('id', a.id)); return render(); }
@@ -601,6 +615,16 @@ async function parentPage(token) {
   await render();
   startPoll(rid, render, 10000);
 }
+
+// ---------- block double taps on any form button ----------
+app.addEventListener('submit', (e) => {
+  const b = e.target.querySelector('[type=submit]');
+  if (!b) return;
+  if (b.dataset.busy) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  b.dataset.busy = '1';
+  b.disabled = true;
+  setTimeout(() => { b.disabled = false; delete b.dataset.busy; }, 2500);
+}, true);
 
 // ---------- boot ----------
 sb.auth.onAuthStateChange((_event, s) => {
