@@ -82,14 +82,16 @@ function statusOf(m, courts) {
 }
 
 // ---------- messages ----------
+const CHECKIN_AT = 3; // 2–3 matches away: check in at the ring; more than that: warm up
 const GEAR = '✅ Protective gear on under the uniform\n✅ Mouthguard\n✅ Water bottle';
 
 function groupMessage(m, a, t, s) {
   const who = shortName(a.name).toUpperCase();
   const where = `Court ${m.court}, Match #${m.match_no} (${m.event})`;
   let line;
-  if (s.away === 1) line = `🔴 ${who} is UP NEXT — ${where}. Please come to Court ${m.court} now.`;
-  else if (s.away > 1) line = `🟡 ${who} — get ready! ${where}, about ${s.away} matches away. Please head to the waiting area.\n\n${GEAR}\n`;
+  if (s.away === 1) line = `🔴 ${who} is UP NEXT — ${where}. Please come to Court ${m.court} now and hand over to the coach.`;
+  else if (s.away >= 2 && s.away <= CHECKIN_AT) line = `🟠 ${who} — ${s.away} matches away! ${where}. Please check in at Court ${m.court} and hand over to the coach.\n\n${GEAR}\n`;
+  else if (s.away > CHECKIN_AT) line = `🟡 ${who} — coming up soon! ${where}, about ${s.away} matches away. Please start warming up.\n\n${GEAR}\n`;
   else line = `🟡 ${who} — ${where}. We'll post again as the court moves.\n\n${GEAR}\n`;
   return `${line}\nLive status: ${parentLink(a.token)}`;
 }
@@ -98,10 +100,11 @@ function parentMessage(m, a, t, s) {
   const child = first(a.name);
   const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
   let body;
-  if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
-  else if (s.away > 1) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
+  if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to Court ${m.court} right away and hand ${child} over to the coach.`;
+  else if (s.away >= 2 && s.away <= CHECKIN_AT) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to Court ${m.court} now to check in and hand ${child} over to the coach.`;
+  else if (s.away > CHECKIN_AT) body = `${child}'s match is coming up soon: about ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please start warming up now.`;
   else body = `${child} is scheduled on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please stay close to the waiting area.`;
-  const gear = `\n\nBefore heading over, please check:\n${GEAR}`;
+  const gear = `\n\nPlease make sure ${child} has:\n${GEAR}`;
   return `${hi} ${body}${gear}\n\nLive status: ${parentLink(a.token)}\n– ${t.signoff}`;
 }
 
@@ -444,7 +447,7 @@ async function setupPage(id) {
             <div class="field"><label for="sc">Courts</label><input id="sc" type="number" min="1" max="12" value="${t.courts}" inputmode="numeric"></div>
             <div class="field"><label for="sg">Alert at</label><input id="sg" type="number" min="1" max="20" value="${t.group_alert_at}" inputmode="numeric" aria-describedby="sgh"></div>
           </div>
-          <span id="sgh" class="small muted">"Alert at" = how many matches away an athlete moves into the Up Next section.</span>
+          <span id="sgh" class="small muted">"Alert at" = how many matches away an athlete moves into the Up Next section (7 = warm-up time).</span>
           <div class="field"><label for="so">Message sign-off</label><input id="so" value="${esc(t.signoff)}"></div>
           <div class="rowx"><button class="btn dark" style="flex:1" type="submit">Save settings</button>
           <button class="btn danger" type="button" data-act="deltour">Delete tournament</button></div>
@@ -602,9 +605,10 @@ async function parentPage(token) {
     if (nxt) {
       const s = nxt.s;
       if (s.key === 'now') msg = `${childFirst} is on the mat now.`;
-      else if (s.key === 'deck') msg = `${childFirst} is next. Please bring ${childFirst} to the waiting area by Court ${nxt.court} now.`;
+      else if (s.key === 'deck') msg = `${childFirst} is next. Please bring ${childFirst} to Court ${nxt.court} right away and hand over to the coach.`;
+      else if (s.away != null && s.away >= 2 && s.away <= CHECKIN_AT) msg = `${s.away} matches to go. Please check in at Court ${nxt.court} and hand ${childFirst} over to the coach.`;
       else if (s.key === 'past') msg = `This match should be finishing. Your coaches will update the result shortly.`;
-      else if (s.away != null) msg = `About ${s.away} matches to go. Please stay close to the waiting area.`;
+      else if (s.away != null) msg = `About ${s.away} matches to go. Please start warming up.`;
       else msg = `Court ${nxt.court} hasn't started yet. This page updates automatically.`;
     }
     app.innerHTML = `
