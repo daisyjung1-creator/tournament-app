@@ -426,8 +426,8 @@ async function setupPage(id) {
         <summary>Tournament settings</summary>
         <form class="stack" id="tset" style="padding-top:10px">
           <div class="field"><label for="sn">Name</label><input id="sn" value="${esc(t.name)}" required></div>
-          <div class="grid3">
-            <div class="field"><label for="sd">Date</label><input id="sd" type="date" value="${esc(t.event_date || '')}"></div>
+          <div class="field"><label for="sd">Date</label><input id="sd" type="date" value="${esc(t.event_date || '')}"></div>
+          <div class="grid2">
             <div class="field"><label for="sc">Courts</label><input id="sc" type="number" min="1" max="12" value="${t.courts}" inputmode="numeric"></div>
             <div class="field"><label for="sg">Alert at</label><input id="sg" type="number" min="1" max="20" value="${t.group_alert_at}" inputmode="numeric" aria-describedby="sgh"></div>
           </div>
