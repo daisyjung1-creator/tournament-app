@@ -313,7 +313,7 @@ async function nextPage(id) {
       const stage = stageOf(s);
       const sentP = !!nl.parent?.[stage], sentG = !!nl.group?.[stage];
       const log = [
-        a.checked_in_at ? `Checked in ${ago(a.checked_in_at)}` : '',
+        m.checked_in_at ? `Checked in ${ago(m.checked_in_at)}` : '',
         logLine('Parent', nl.parent),
         logLine('Group', nl.group),
       ].filter(Boolean).join('<br>');
@@ -331,7 +331,7 @@ async function nextPage(id) {
           <button class="btn ${sentP ? 'ghost' : 'dark'}" style="flex:1" data-act="parent" data-m="${m.id}">${sentP ? UI.check + 'Parent again' : UI.chat + 'Message parent'}</button>
         </div>`}
         <div class="tools">
-          <button class="btn icon ${a.checked_in_at ? 'on' : 'ghost'}" aria-label="${a.checked_in_at ? 'Checked in — tap to undo' : 'Mark checked in'}" aria-pressed="${!!a.checked_in_at}" data-act="checkin" data-a="${a.id}">${ICON.check}</button>
+          <button class="btn icon ${m.checked_in_at ? 'on' : 'ghost'}" aria-label="${m.checked_in_at ? 'Checked in for this match — tap to undo' : 'Mark checked in for this match'}" aria-pressed="${!!m.checked_in_at}" data-act="checkin" data-m="${m.id}">${ICON.check}</button>
           ${a.phone ? `<a class="btn icon ghost" aria-label="Call ${esc(a.guardian_name || 'parent')}" href="tel:+${digits(a.phone)}">${ICON.phone}</a>` : ''}
           <select aria-label="Result for ${esc(a.name)} match ${m.match_no}" data-act="result" data-m="${m.id}">
             ${['', 'Win', 'Loss', 'Gold', 'Silver', 'Bronze', 'Done'].map((r) => `<option value="${r}" ${(m.result || '') === r ? 'selected' : ''}>${r || 'Result…'}</option>`).join('')}
@@ -410,8 +410,10 @@ async function nextPage(id) {
     }
     if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(); }
     if (act === 'checkin') {
-      const a = cache.byId[el.dataset.a];
-      await must(sb.from('t_athletes').update({ checked_in_at: a.checked_in_at ? null : new Date().toISOString() }).eq('id', a.id));
+      const m = cache.matches.find((x) => x.id === el.dataset.m);
+      m.checked_in_at = m.checked_in_at ? null : new Date().toISOString();
+      await must(sb.from('t_matches').update({ checked_in_at: m.checked_in_at }).eq('id', m.id));
+      toast(m.checked_in_at ? `${first(cache.byId[m.athlete_id]?.name)} checked in for #${m.match_no}` : 'Check-in undone');
       return render();
     }
   };
