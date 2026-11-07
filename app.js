@@ -262,7 +262,14 @@ async function nextPage(id) {
     const later = active.filter((r) => !soon.includes(r));
     const done = rows.filter((r) => r.s.key === 'done');
 
+    // same athlete needed on another court soon (e.g. sparring and poomsae overlapping)
+    const clashes = (m) => matches
+      .filter((o) => o.athlete_id === m.athlete_id && o.id !== m.id && o.court !== m.court && !o.result)
+      .map((o) => ({ o, s: statusOf(o, courts) }))
+      .filter(({ s }) => s.away != null && s.away <= t.group_alert_at);
+
     const card = ({ m, a, s }) => {
+      const clash = s.key === 'done' ? [] : clashes(m);
       const log = [
         a.checked_in_at ? `Checked in ${ago(a.checked_in_at)}` : '',
         m.group_notified_at ? `Group posted ${ago(m.group_notified_at)}` : '',
@@ -274,6 +281,7 @@ async function nextPage(id) {
           <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(m.event)}${m.division ? ' · ' + esc(m.division) : ''}</div></div>
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span></div>
         </div>
+        ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(o.event)} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${s.key === 'done' ? '' : `
         <div class="tools">
           <button class="btn" style="flex:1" data-act="group" data-m="${m.id}">Post to group</button>

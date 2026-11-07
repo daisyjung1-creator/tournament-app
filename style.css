@@ -124,3 +124,6 @@ details summary { cursor: pointer; font-weight: 700; font-size: 15px; min-height
 .court .numin::-webkit-inner-spin-button, .court .numin::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .courts { gap: 10px; }
 .court { padding: 12px; }
+
+.clash { background: var(--accent-soft); color: var(--accent-ink); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.4; }
+.clash strong { color: #5C2400; }
