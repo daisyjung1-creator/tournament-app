@@ -81,13 +81,20 @@ function statusOf(m, courts) {
   return { key: away <= 3 ? 'soon1' : 'soon', label: `${away} AWAY`, away };
 }
 
+// ---------- rounds & corners ----------
+const ROUNDS = ['Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinal', 'Semifinal', 'Final'];
+const nextRound = (r) => { const i = ROUNDS.indexOf(r); return i >= 0 && i < ROUNDS.length - 1 ? ROUNDS[i + 1] : ''; };
+const evLabel = (m) => `${m.event}${m.round ? ' · ' + m.round : ''}`;
+const cornerMsg = (c) => (c === 'Blue' ? '🟦 BLUE corner (Chung)' : c === 'Red' ? '🟥 RED corner (Hong)' : '');
+const cornerChip = (c) => (c ? `<span class="corner ${c.toLowerCase()}">${c === 'Blue' ? 'Chung · Blue' : 'Hong · Red'}</span>` : '');
+
 // ---------- messages ----------
 const CHECKIN_AT = 3; // 2–3 matches away: check in at the ring; more than that: warm up
 const GEAR = '✅ Protective gear on under the uniform\n✅ Mouthguard\n✅ Water bottle';
 
 function groupMessage(m, a, t, s) {
   const who = shortName(a.name).toUpperCase();
-  const where = `Court ${m.court}, Match #${m.match_no} (${m.event})`;
+  const where = `Court ${m.court}, Match #${m.match_no} (${evLabel(m)})${m.corner ? ' · ' + cornerMsg(m.corner) : ''}`;
   let line;
   if (s.away === 1) line = `🔴 ${who} is UP NEXT — ${where}. Please come to Court ${m.court} now and hand over to the coach.`;
   else if (s.away >= 2 && s.away <= CHECKIN_AT) line = `🟠 ${who} — ${s.away} matches away! ${where}. Please check in at Court ${m.court} and hand over to the coach.\n\n${GEAR}\n`;
@@ -100,11 +107,12 @@ function parentMessage(m, a, t, s) {
   const child = first(a.name);
   const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
   let body;
-  if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to Court ${m.court} right away and hand ${child} over to the coach.`;
-  else if (s.away >= 2 && s.away <= CHECKIN_AT) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to Court ${m.court} now to check in and hand ${child} over to the coach.`;
-  else if (s.away > CHECKIN_AT) body = `${child}'s match is coming up soon: about ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please start warming up now.`;
-  else body = `${child} is scheduled on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please stay close to the waiting area.`;
-  const gear = `\n\nPlease make sure ${child} has:\n${GEAR}`;
+  if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please bring ${child} to Court ${m.court} right away and hand ${child} over to the coach.`;
+  else if (s.away >= 2 && s.away <= CHECKIN_AT) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please bring ${child} to Court ${m.court} now to check in and hand ${child} over to the coach.`;
+  else if (s.away > CHECKIN_AT) body = `${child}'s match is coming up soon: about ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please start warming up now.`;
+  else body = `${child} is scheduled on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please stay close to the waiting area.`;
+  const corner = m.corner ? `\n${child} is in the ${cornerMsg(m.corner)}.` : '';
+  const gear = `${corner}\n\nPlease make sure ${child} has:\n${GEAR}`;
   return `${hi} ${body}${gear}\n\nLive status: ${parentLink(a.token)}\n– ${t.signoff}`;
 }
 
@@ -283,10 +291,11 @@ async function nextPage(id) {
       return `
       <article class="card ${s.key === 'now' || s.key === 'deck' ? 'hot' : ''}">
         <div class="head">
-          <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(m.event)}${m.division ? ' · ' + esc(m.division) : ''}</div></div>
-          <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span></div>
+          <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''}</div></div>
+          <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span>
+            ${s.key === 'done' ? cornerChip(m.corner) : `<br><button class="corner-btn ${m.corner ? m.corner.toLowerCase() : ''}" data-act="corner" data-m="${m.id}" aria-label="Corner: ${m.corner || 'not set'}. Tap to change">${m.corner ? (m.corner === 'Blue' ? 'Chung · Blue' : 'Hong · Red') : 'Set corner'}</button>`}</div>
         </div>
-        ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(o.event)} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
+        ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(evLabel(o))} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${['done', 'now', 'past'].includes(s.key) ? '' : `
         <div class="tools">
           <button class="btn" style="flex:1" data-act="group" data-m="${m.id}">Post to group</button>
@@ -303,8 +312,32 @@ async function nextPage(id) {
       </article>`;
     };
 
+    const needNext = matches.filter((m) => m.result === 'Win' && m.round !== 'Final' && !(ui.skipNext || []).includes(m.id)
+      && !matches.some((o) => o.athlete_id === m.athlete_id && o.event === m.event && o.match_no > m.match_no && o.id !== m.id));
+    const nextForm = (m) => {
+      const a = byId[m.athlete_id]; if (!a) return '';
+      const nr = nextRound(m.round);
+      return `
+      <form class="card hot" data-next="${m.id}">
+        <div><div class="name">🏆 ${esc(a.name)} won${m.round ? ' the ' + esc(m.round) : ''} (#${m.match_no})</div>
+          <div class="meta">Add ${first(a.name)}'s next ${esc(m.event.toLowerCase())} match from the bracket</div></div>
+        <div class="grid2">
+          <div class="field"><label for="nr${m.id}">Round</label><select id="nr${m.id}" name="round">
+            <option value="">—</option>${ROUNDS.map((r) => `<option ${r === nr ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+          <div class="field"><label for="nc${m.id}">Corner</label><select id="nc${m.id}" name="corner">
+            <option value="">—</option><option value="Blue">Chung · Blue</option><option value="Red">Hong · Red</option></select></div>
+          <div class="field"><label for="nk${m.id}">Court</label><select id="nk${m.id}" name="court">
+            ${Array.from({ length: t.courts }, (_, i) => i + 1).map((c) => `<option ${c === m.court ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+          <div class="field"><label for="nn${m.id}">Match #</label><input id="nn${m.id}" name="match_no" type="number" min="1" inputmode="numeric" required></div>
+        </div>
+        <div class="tools"><button class="btn dark" style="flex:1" type="submit">Add next match</button>
+          <button class="btn ghost" type="button" data-act="skipnext" data-m="${m.id}">Skip</button></div>
+      </form>`;
+    };
+
     const filters = ['All', 'Sparring', 'Poomsae'];
     const body = `
+      ${needNext.length ? `<div class="sub-h">Next round needed</div><div class="list">${needNext.map(nextForm).join('')}</div>` : ''}
       <div class="chips">${filters.map((f) => `<button class="chip-btn ${ui.filter === f ? 'on' : ''}" data-act="filter" data-f="${f}">${f}</button>`).join('')}</div>
       ${!matches.length ? `<div class="empty">No matches yet. Add athletes and match numbers in <a href="#/t/${id}/setup">Setup</a>.</div>` : ''}
       ${soon.length ? `<div class="sub-h">Up next (within ${t.group_alert_at})</div><div class="list">${soon.map(card).join('')}</div>` : ''}
@@ -334,6 +367,14 @@ async function nextPage(id) {
       openMessage(act === 'group' ? 'group' : a.channel, a.phone, text);
       return;
     }
+    if (act === 'corner') {
+      const m = cache.matches.find((x) => x.id === el.dataset.m);
+      const nextC = m.corner === 'Blue' ? 'Red' : m.corner === 'Red' ? null : 'Blue';
+      m.corner = nextC;
+      await must(sb.from('t_matches').update({ corner: nextC }).eq('id', m.id));
+      return render();
+    }
+    if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(); }
     if (act === 'checkin') {
       const a = cache.byId[el.dataset.a];
       await must(sb.from('t_athletes').update({ checked_in_at: a.checked_in_at ? null : new Date().toISOString() }).eq('id', a.id));
@@ -343,14 +384,35 @@ async function nextPage(id) {
   app.onchange = async (e) => {
     const el = e.target.closest('[data-act=result]');
     if (!el) return;
+    const m = cache.matches.find((x) => x.id === el.dataset.m);
+    let dropLater = [];
+    if (el.value === 'Loss' && m) {
+      const later = cache.matches.filter((o) => o.athlete_id === m.athlete_id && o.event === m.event && o.match_no > m.match_no && !o.result);
+      if (later.length && confirm(`${first(cache.byId[m.athlete_id]?.name)} is out of ${m.event}. Remove the ${later.length} later ${m.event.toLowerCase()} match${later.length > 1 ? 'es' : ''} (${later.map((o) => '#' + o.match_no).join(', ')})?`)) dropLater = later.map((o) => o.id);
+    }
     await must(sb.from('t_matches').update({ result: el.value || null }).eq('id', el.dataset.m));
+    if (dropLater.length) await must(sb.from('t_matches').delete().in('id', dropLater));
     toast(el.value ? `Saved: ${el.value}` : 'Result cleared');
+    render();
+  };
+  app.onsubmit = async (e) => {
+    const f = e.target.closest('form[data-next]');
+    if (!f) return;
+    e.preventDefault();
+    const prev = cache.matches.find((x) => x.id === f.dataset.next);
+    const fd = new FormData(f);
+    await must(sb.from('t_matches').insert({
+      tournament_id: id, athlete_id: prev.athlete_id, event: prev.event, division: prev.division,
+      round: fd.get('round') || null, corner: fd.get('corner') || null,
+      court: parseInt(fd.get('court'), 10), match_no: parseInt(fd.get('match_no'), 10),
+    }));
+    toast(`Added ${fd.get('round') || 'next match'} · #${fd.get('match_no')}`);
     render();
   };
 
   const rid = routeId;
   await render();
-  startPoll(rid, () => (document.activeElement?.matches('select') ? Promise.resolve() : render()), POLL_MS);
+  startPoll(rid, () => (document.activeElement?.matches('select, input') ? Promise.resolve() : render()), POLL_MS);
 }
 
 // ---------- Courts (floor coaches) ----------
@@ -481,6 +543,12 @@ async function setupPage(id) {
             ${Array.from({ length: t.courts }, (_, i) => i + 1).map((c) => `<option ${+keep.court === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <div class="field"><label for="mn">Match #</label><input id="mn" type="number" min="1" inputmode="numeric" required></div>
         </div>
+        <div class="grid2">
+          <div class="field"><label for="mr">Round (sparring)</label><select id="mr">
+            <option value="">—</option>${ROUNDS.map((r) => `<option ${keep.round === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+          <div class="field"><label for="mk">Corner</label><select id="mk">
+            <option value="">—</option><option value="Blue">Chung · Blue</option><option value="Red">Hong · Red</option></select></div>
+        </div>
         <div class="field"><label for="md">Division (optional)</label><input id="md" placeholder="e.g. Cadet F -47kg" value="${esc(keep.division || '')}"></div>
         <button class="btn dark block" type="submit">Save &amp; add next</button>
       </form>` : ''}
@@ -496,7 +564,7 @@ async function setupPage(id) {
                 <div class="small muted">${esc(a.guardian_name || 'No parent name')} · ${a.phone ? esc(a.phone) : '<span style="color:var(--red-ink)">No phone</span>'} · ${a.channel === 'sms' ? 'Text' : 'WhatsApp'}</div></div>
               <button class="linkbtn" data-act="channel" data-a="${a.id}">Use ${a.channel === 'sms' ? 'WhatsApp' : 'Text'}</button>
             </div>
-            ${ms.map((m) => `<div class="mrow"><span>${esc(m.event)}${m.division ? ' · ' + esc(m.division) : ''}</span>
+            ${ms.map((m) => `<div class="mrow"><span>${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''} ${cornerChip(m.corner)}${m.result ? ' · <strong>' + esc(m.result) + '</strong>' : ''}</span>
               <span class="rowx"><strong>C${m.court} · #${m.match_no}</strong><button class="linkbtn red" data-act="delm" data-m="${m.id}" aria-label="Delete match ${m.match_no}">Delete</button></span></div>`).join('') || '<div class="small muted">No matches yet</div>'}
             <div class="rowx" style="flex-wrap:wrap">
               <button class="linkbtn" data-act="copylink" data-a="${a.id}">Copy parent link</button>
@@ -547,11 +615,13 @@ async function setupPage(id) {
         court: parseInt(app.querySelector('#mc').value, 10),
         match_no: parseInt(app.querySelector('#mn').value, 10),
         division: app.querySelector('#md').value.trim() || null,
+        round: app.querySelector('#mr').value || null,
+        corner: app.querySelector('#mk').value || null,
       };
       const clash = cache.matches.find((m) => m.court === rec.court && m.match_no === rec.match_no);
       if (clash && !confirm(`Court ${rec.court} #${rec.match_no} is already used by ${cache.byId[clash.athlete_id]?.name}. Add anyway?`)) return;
       await must(sb.from('t_matches').insert(rec));
-      ui.matchForm = { athlete: rec.athlete_id, event: rec.event, court: rec.court, division: rec.division };
+      ui.matchForm = { athlete: rec.athlete_id, event: rec.event, court: rec.court, division: rec.division, round: rec.round };
       toast(`Saved C${rec.court} · #${rec.match_no}`); await render(); app.querySelector('#mn')?.focus();
     };
   };
@@ -623,6 +693,7 @@ async function parentPage(token) {
           <span class="eyebrow accent" style="color:var(--accent)">Next match</span>
           <span class="badge">${nxt.s.label}</span>
         </div>
+        <div style="font-size:15px;font-weight:600">${esc(evLabel(nxt))}${nxt.corner ? ' ' + cornerChip(nxt.corner) : ''}</div>
         <div class="big">
           <div><span class="l">Court</span><span class="v">${nxt.court}</span></div>
           <div><span class="l">Match</span><span class="v">#${nxt.match_no}</span></div>
@@ -637,8 +708,8 @@ async function parentPage(token) {
       <div class="pad">
         <h2>Today</h2>
         ${ms.map((m) => `
-          <div class="trow"><div><div class="t">${esc(m.event)}${m.division ? ' · ' + esc(m.division) : ''}</div>
-            <div class="small muted">Court ${m.court} · Match #${m.match_no}</div></div>
+          <div class="trow"><div><div class="t">${esc(evLabel(m))}</div>
+            <div class="small muted">Court ${m.court} · Match #${m.match_no}${m.division ? ' · ' + esc(m.division) : ''}</div>${m.corner ? `<div style="margin-top:4px">${cornerChip(m.corner)}</div>` : ''}</div>
             <strong class="small">${m.result ? esc(m.result) : esc(m.s.label.charAt(0) + m.s.label.slice(1).toLowerCase())}</strong></div>`).join('') || '<div class="small muted">No matches posted yet.</div>'}
       </div>
       <p class="small muted" style="text-align:center;padding:0 20px 24px">Updated by your coaches · refreshes automatically<br>– ${esc(data.signoff)}</p>`;

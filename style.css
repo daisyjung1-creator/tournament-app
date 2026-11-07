@@ -130,3 +130,11 @@ details summary { cursor: pointer; font-weight: 700; font-size: 15px; min-height
 
 .gear { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
 .gear ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
+
+/* Chung (blue) / Hong (red) corners */
+.corner { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px; color: #fff; white-space: nowrap; }
+.corner.blue { background: #1F4FD1; }
+.corner.red { background: #C8102E; }
+.corner-btn { margin-top: 6px; min-height: 32px; padding: 4px 10px; border-radius: 10px; border: 1px dashed #BDBDBD; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.corner-btn.blue { background: #1F4FD1; border: 0; color: #fff; }
+.corner-btn.red { background: #C8102E; border: 0; color: #fff; }
