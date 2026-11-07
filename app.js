@@ -143,7 +143,7 @@ async function route() {
 
 // ---------- login ----------
 function loginPage() {
-  app.onclick = null; app.onchange = null;
+  app.onclick = null; app.onchange = null; app.onsubmit = null;
   app.innerHTML = `
     <header class="top"><span class="eyebrow">Tournament Day</span><h1>Coach sign in</h1></header>
     <form class="pad stack" id="login">
@@ -197,7 +197,7 @@ async function homePage() {
       <button class="btn dark block" type="submit">Create</button>
     </form>`;
   app.querySelector('[data-act=logout]').onclick = () => sb.auth.signOut();
-  app.onchange = null;
+  app.onchange = null; app.onsubmit = null;
   app.onclick = async (e) => {
     const el = e.target.closest('[data-act=delt]');
     if (!el) return;
@@ -247,6 +247,7 @@ function shell(t, tab, body) {
 
 // ---------- Up Next (waiting-area coach) ----------
 async function nextPage(id) {
+  app.onsubmit = null;
   const render = async () => {
     const { t, matches, courts, byId } = await loadT(id);
     const rows = matches
@@ -356,56 +357,65 @@ async function courtsPage(id) {
       cells.push(`
         <section class="court ${near ? 'ours' : ''}">
           <div class="rowx" style="justify-content:space-between"><strong>Court ${c}</strong>${near ? '<span class="dot" role="img" aria-label="Our athlete is close"></span>' : ''}</div>
-          <div><div class="eyebrow" style="font-size:11px">Now</div>
-            <button class="num" data-act="set" data-c="${c}" aria-label="Set current match for court ${c}">${cur != null ? '#' + cur : '—'}</button></div>
+          <form class="rowx" data-court="${c}" style="gap:6px">
+            <label for="cn${c}" class="eyebrow" style="font-size:11px">Now #</label>
+            <input id="cn${c}" class="numin" type="number" min="1" inputmode="numeric" value="${cur ?? ''}" placeholder="—" aria-label="Current match on court ${c}">
+            <button class="btn ghost" type="submit" style="height:36px;padding:0 10px;font-size:13px">Set</button>
+          </form>
           <div class="next">${nextTxt}</div>
           <div class="rowx">
-            <button class="btn ghost icon" data-act="dec" data-c="${c}" aria-label="Previous match on court ${c}">−</button>
-            <button class="btn dark" style="flex:1" data-act="inc" data-c="${c}" aria-label="Next match on court ${c}">+</button>
+            <button class="btn ghost icon" type="button" data-act="dec" data-c="${c}" aria-label="Previous match on court ${c}" ${cur == null ? 'disabled' : ''}>−</button>
+            <button class="btn dark" type="button" style="flex:1" data-act="inc" data-c="${c}" aria-label="Next match on court ${c}">+</button>
           </div>
         </section>`);
     }
+    const y = window.scrollY;
     app.innerHTML = shell(t, 'courts', `
-      <p class="pad small muted" style="margin:0;padding-bottom:0">Tap <strong>+</strong> each time a match finishes. Tap the number to type it in.</p>
+      <p class="pad small muted" style="margin:0;padding-bottom:0">Type the match number on the mat and tap <strong>Set</strong> once. After that, tap <strong>+</strong> each time a match finishes.</p>
       <div class="courts">${cells.join('')}</div>`);
+    window.scrollTo(0, y);
   };
 
   const save = async (c, val) => {
-    await must(sb.from('t_courts').upsert({ tournament_id: id, court: c, current_match: val, updated_at: new Date().toISOString() }));
-    render();
+    cache.courts[c] = val; // show the change right away
+    await must(sb.from('t_courts').upsert({ tournament_id: id, court: c, current_match: val, updated_at: new Date().toISOString() }, { onConflict: 'tournament_id,court' }));
+    await render();
   };
   app.onchange = null;
+  app.onsubmit = async (e) => {
+    const f = e.target.closest('form[data-court]');
+    if (!f) return;
+    e.preventDefault();
+    const c = parseInt(f.dataset.court, 10);
+    const v = f.querySelector('input').value.trim();
+    document.activeElement?.blur();
+    if (v === '') return save(c, null);
+    if (+v > 0) { await save(c, parseInt(v, 10)); toast(`Court ${c} set to #${parseInt(v, 10)}`); }
+  };
   app.onclick = async (e) => {
-    const el = e.target.closest('[data-act]');
+    const el = e.target.closest('[data-act=inc],[data-act=dec]');
     if (!el || !cache.t) return;
     const c = parseInt(el.dataset.c, 10);
-    // re-read latest value so two coaches don't overwrite each other
+    // read the latest value so two coaches tapping the same court don't overwrite each other
     const { data } = await sb.from('t_courts').select('current_match').eq('tournament_id', id).eq('court', c).maybeSingle();
     const cur = data?.current_match ?? null;
-    if (el.dataset.act === 'inc') {
-      if (cur == null) {
-        const firstMatch = cache.matches.filter((m) => m.court === c).sort((x, y) => x.match_no - y.match_no)[0];
-        const v = prompt(`Court ${c}: which match number is on the mat now?`, firstMatch ? String(firstMatch.match_no) : '1');
-        if (v && +v > 0) save(c, parseInt(v, 10));
-        return;
-      }
-      return save(c, cur + 1);
+    if (cur == null) {
+      toast(`Type the match number on Court ${c} first, then tap Set`);
+      app.querySelector(`#cn${c}`)?.focus();
+      return;
     }
-    if (el.dataset.act === 'dec' && cur != null) return save(c, Math.max(1, cur - 1));
-    if (el.dataset.act === 'set') {
-      const v = prompt(`Court ${c}: current match number`, cur != null ? String(cur) : '');
-      if (v === null) return;
-      if (v.trim() === '') return save(c, null);
-      if (+v > 0) return save(c, parseInt(v, 10));
-    }
+    if (el.dataset.act === 'inc') return save(c, cur + 1);
+    return save(c, Math.max(1, cur - 1));
   };
   const rid = routeId;
   await render();
-  startPoll(rid, render, POLL_MS);
+  // don't redraw while a coach is typing a number
+  startPoll(rid, () => (document.activeElement?.matches('input') ? Promise.resolve() : render()), POLL_MS);
 }
 
 // ---------- Setup ----------
 async function setupPage(id) {
+  app.onsubmit = null;
   if (!roster) roster = await must(sb.rpc('t_roster'));
   const render = async () => {
     const { t, athletes, matches } = await loadT(id);
@@ -561,7 +571,7 @@ async function setupPage(id) {
 
 // ---------- Parent view (public, by secret link) ----------
 async function parentPage(token) {
-  app.onclick = null; app.onchange = null;
+  app.onclick = null; app.onchange = null; app.onsubmit = null;
   const render = async () => {
     const { data, error } = await sb.rpc('t_parent_view', { p_token: token });
     if (error || !data) {

@@ -97,3 +97,6 @@ nav.bottom svg { width: 22px; height: 22px; }
 #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 20; max-width: 90vw; }
 #toast.show { opacity: 1; }
 details summary { cursor: pointer; font-weight: 700; font-size: 15px; min-height: 32px; display: flex; align-items: center; }
+
+.court .numin { width: 100%; min-width: 0; flex: 1; height: 44px; border: 1px solid #D4D4D4; border-radius: 10px; padding: 0 8px; font-size: 26px; font-weight: 700; letter-spacing: -.02em; background: #fff; }
+.court form label { white-space: nowrap; }
