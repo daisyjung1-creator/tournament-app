@@ -88,7 +88,7 @@ function groupMessage(m, a, t, s) {
   const who = shortName(a.name).toUpperCase();
   const where = `Court ${m.court}, Match #${m.match_no} (${m.event})`;
   let line;
-  if (s.away === 0 || s.away === 1) line = `🔴 ${who} is ${s.away === 0 ? 'ON THE MAT' : 'UP NEXT'} — ${where}. Please come to Court ${m.court} now.`;
+  if (s.away === 1) line = `🔴 ${who} is UP NEXT — ${where}. Please come to Court ${m.court} now.`;
   else if (s.away > 1) line = `🟡 ${who} — get ready! ${where}, about ${s.away} matches away. Please head to the waiting area.\n\n${GEAR}\n`;
   else line = `🟡 ${who} — ${where}. We'll post again as the court moves.\n\n${GEAR}\n`;
   return `${line}\nLive status: ${parentLink(a.token)}`;
@@ -98,11 +98,10 @@ function parentMessage(m, a, t, s) {
   const child = first(a.name);
   const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
   let body;
-  if (s.away === 0) body = `${child} is ON THE MAT now on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to Court ${m.court} right away.`;
-  else if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
+  if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
   else if (s.away > 1) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
   else body = `${child} is scheduled on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please stay close to the waiting area.`;
-  const gear = s.away === 0 ? '' : `\n\nBefore heading over, please check:\n${GEAR}`;
+  const gear = `\n\nBefore heading over, please check:\n${GEAR}`;
   return `${hi} ${body}${gear}\n\nLive status: ${parentLink(a.token)}\n– ${t.signoff}`;
 }
 
@@ -285,7 +284,7 @@ async function nextPage(id) {
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span></div>
         </div>
         ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(o.event)} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
-        ${s.key === 'done' ? '' : `
+        ${['done', 'now', 'past'].includes(s.key) ? '' : `
         <div class="tools">
           <button class="btn" style="flex:1" data-act="group" data-m="${m.id}">Post to group</button>
           <button class="btn dark" style="flex:1" data-act="parent" data-m="${m.id}">Message parent</button>
