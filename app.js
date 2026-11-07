@@ -164,6 +164,7 @@ function openMessage(channel, phone, text) {
 // ---------- routing ----------
 async function route() {
   stopPoll();
+  delete app.dataset.shell; delete app.dataset.page;
   routeId++;
   const h = location.hash || '#/';
   const pm = h.match(/^#\/p\/([0-9a-f-]{36})$/i);
@@ -279,10 +280,31 @@ function shell(t, tab, body) {
       <a class="back" href="#/">‹ All tournaments</a>
       <h1>${esc(t.name)}</h1>
     </header>
-    ${body}
+    <div id="view">${body}</div>
     <nav class="bottom"><div class="in">
       ${tabs.map(([k, label, icon]) => `<a href="#/t/${t.id}/${k}" class="${k === tab ? 'on' : ''}">${icon}${label}</a>`).join('')}
     </div></nav>`;
+}
+
+// Draw a tournament screen. On refreshes, only the part below the header changes,
+// and nothing is touched if the content is identical — so the logo never flickers.
+function paint(t, tab, body) {
+  const key = `${t.id}|${tab}|${t.name}|${t.event_date || ''}`;
+  const view = document.getElementById('view');
+  if (app.dataset.shell === key && view) {
+    if (view.dataset.html !== body) { view.innerHTML = body; view.dataset.html = body; }
+    return;
+  }
+  app.innerHTML = shell(t, tab, body);
+  app.dataset.shell = key;
+  document.getElementById('view').dataset.html = body;
+}
+// same idea for full pages without the tournament header (parent page)
+function paintPage(html) {
+  if (app.dataset.page === html) return;
+  app.innerHTML = html;
+  app.dataset.page = html;
+  delete app.dataset.shell;
 }
 
 // ---------- Up Next (waiting-area coach) ----------
@@ -375,7 +397,7 @@ async function nextPage(id) {
     // keep the "Finished" panel open across refreshes
     const wasOpen = app.querySelector('details')?.open;
     const y = window.scrollY;
-    app.innerHTML = shell(t, 'next', body);
+    paint(t, 'next', body);
     if (wasOpen && app.querySelector('details')) app.querySelector('details').open = true;
     window.scrollTo(0, y);
   };
@@ -490,7 +512,7 @@ async function courtsPage(id) {
         </section>`);
     }
     const y = window.scrollY;
-    app.innerHTML = shell(t, 'courts', `
+    paint(t, 'courts', `
       <p class="pad small muted" style="margin:0;padding-bottom:0">Type the match number on the mat and tap <strong>Set</strong> once. After that, tap <strong>+</strong> each time a match finishes.</p>
       <div class="courts">${cells.join('')}</div>`);
     window.scrollTo(0, y);
@@ -616,7 +638,7 @@ async function setupPage(id) {
           </div>`;
         }).join('') : '<div class="small muted">No athletes yet.</div>'}
       </div>`;
-    app.innerHTML = shell(t, 'setup', body);
+    paint(t, 'setup', body);
 
     // autofill parent details from the dojang roster
     const an = app.querySelector('#an');
@@ -723,7 +745,7 @@ async function parentPage(token) {
       else if (s.away != null) msg = `About ${s.away} matches to go. Please start warming up.`;
       else msg = `Court ${nxt.court} hasn't started yet. This page updates automatically.`;
     }
-    app.innerHTML = `
+    paintPage(`
       <header class="parent-top">
         <img class="logo" src="logo.png" alt="High Performance Hankook">
         <div><span class="eyebrow">${esc(data.tournament)} · Live</span>
@@ -754,7 +776,7 @@ async function parentPage(token) {
             <div class="small muted">Court ${m.court} · Match #${m.match_no}${m.division ? ' · ' + esc(m.division) : ''}</div>${m.corner ? `<div style="margin-top:4px">${cornerChip(m.corner)}</div>` : ''}</div>
             <strong class="small">${m.result ? esc(m.result) : esc(m.s.label.charAt(0) + m.s.label.slice(1).toLowerCase())}</strong></div>`).join('') || '<div class="small muted">No matches posted yet.</div>'}
       </div>
-      <p class="small muted" style="text-align:center;padding:0 20px 24px">Updated by your coaches · refreshes automatically<br>– ${esc(data.signoff)}</p>`;
+      <p class="small muted" style="text-align:center;padding:0 20px 24px">Updated by your coaches · refreshes automatically<br>– ${esc(data.signoff)}</p>`);
   };
   const rid = routeId;
   await render();
