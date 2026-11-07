@@ -47,9 +47,34 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+// ---------- connection status ----------
+let lastOk = Date.now();
+let offline = false;
+const isNetErr = (err) => /fetch|network|load failed|timed? ?out|offline/i.test(String(err?.message || err));
+function setNet(ok) {
+  if (ok) { lastOk = Date.now(); if (!offline) return; offline = false; }
+  else offline = true;
+  renderNet();
+}
+function renderNet() {
+  const el = document.getElementById('net');
+  if (!el) return;
+  const down = offline || !navigator.onLine;
+  el.hidden = !down;
+  if (down) el.textContent = `⚠ No connection — screen is not updating. Last update ${new Date(lastOk).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+}
+window.addEventListener('offline', renderNet);
+window.addEventListener('online', () => { renderNet(); });
+
 async function must(promise) {
-  const { data, error } = await promise;
-  if (error) { toast(error.message); throw error; }
+  let res;
+  try { res = await promise; } catch (err) { setNet(false); throw err; }
+  const { data, error } = res;
+  if (error) {
+    if (isNetErr(error)) setNet(false); else toast(error.message);
+    throw error;
+  }
+  setNet(true);
   return data;
 }
 
@@ -58,7 +83,7 @@ function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = nul
 function startPoll(rid, fn, ms) {
   if (rid !== routeId) return;
   stopPoll();
-  pollTimer = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, ms);
+  pollTimer = setInterval(() => { if (!document.hidden) fn().catch((err) => { if (isNetErr(err)) setNet(false); }); }, ms);
 }
 
 const ICON = {
@@ -97,6 +122,27 @@ function statusOf(m, courts) {
   if (away === 1) return { key: 'deck', label: 'ON DECK', away };
   return { key: away <= 3 ? 'soon1' : 'soon', label: `${away} AWAY`, away };
 }
+
+const fmtDate = (d) => {
+  if (!d) return '';
+  const [y, mo, da] = d.split('-').map(Number);
+  return new Date(y, mo - 1, da).toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+const isBlackBelt = (a) => /^black belt/i.test(a?.belt || '');
+const needsWeighIn = (a, matches) => isBlackBelt(a) && !a.weigh_in_at && matches.some((m) => m.athlete_id === a.id && m.event === 'Sparring');
+
+// courts where one of our athletes is on the mat or on deck right now
+function coachLoad(t, matches, courts) {
+  const busy = [...new Set(matches.filter((m) => {
+    if (m.result) return false;
+    const s = statusOf(m, courts);
+    return s.away === 0 || s.away === 1;
+  }).map((m) => m.court))].sort((x, y) => x - y);
+  return { busy, over: busy.length > t.coaches };
+}
+const coachBanner = (load, t) => (load.over
+  ? `<div class="clash" role="alert" style="margin:12px 20px 0"><strong>⚠ Coaches needed on ${load.busy.length} courts at once</strong> (Courts ${load.busy.join(', ')}) — only ${t.coaches} coaches today. Plan who goes where.</div>`
+  : '');
 
 // ---------- rounds & corners ----------
 const ROUNDS = ['Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinal', 'Semifinal', 'Final'];
@@ -142,6 +188,48 @@ function parentMessage(m, a, t, s) {
   return `${hi} ${body}${gear}\n\nLive status: ${parentLink(a.token)}\n– ${t.signoff}`;
 }
 
+const matchLine = (m) => `• ${evLabel(m)} — Court ${m.court}, Match #${m.match_no}${m.corner ? ` (${m.corner === 'Blue' ? '🟦 Blue/Chung' : '🟥 Red/Hong'})` : ''}`;
+
+function dayBeforeMessage(t, a, ms) {
+  const child = first(a.name);
+  const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
+  const lines = [
+    `${hi} Here are ${child}'s details for ${t.name}${t.event_date ? ` (${fmtDate(t.event_date)})` : ''}:`,
+    '',
+    t.venue ? `📍 ${t.venue}` : '',
+    t.arrival ? `⏰ Please arrive by ${t.arrival}` : '',
+    '',
+    ms.length ? `${child}'s matches:\n${ms.sort((x, y) => x.match_no - y.match_no).map(matchLine).join('\n')}` : `${child}'s match numbers will be shared as soon as we have them.`,
+    '',
+    `Please bring:\n${GEAR}`,
+    '',
+    `We'll message you as ${child}'s turn gets close. Live status: ${parentLink(a.token)}`,
+    `– ${t.signoff}`,
+  ];
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+function groupScheduleMessage(t, athletes, matches) {
+  const rows = athletes.map((a) => {
+    const ms = matches.filter((m) => m.athlete_id === a.id).sort((x, y) => x.match_no - y.match_no);
+    const parts = ms.map((m) => `${m.event}${m.round ? ' ' + m.round : ''}: Ct ${m.court} #${m.match_no}`);
+    return `• ${shortName(a.name).toUpperCase()} — ${parts.join(' · ') || 'match # to come'}`;
+  });
+  return [
+    `📣 ${t.name}${t.event_date ? ` — ${fmtDate(t.event_date)}` : ''}`,
+    t.venue ? `📍 ${t.venue}` : '',
+    t.arrival ? `⏰ Please arrive by ${t.arrival}` : '',
+    '',
+    'Our athletes:',
+    ...rows,
+    '',
+    `Please bring:\n${GEAR}`,
+    '',
+    `Each family will also get a personal live-status link. Good luck everyone! 🧡`,
+    `– ${t.signoff}`,
+  ].join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
 function openMessage(channel, phone, text) {
   const enc = encodeURIComponent(text);
   const d = digits(phone);
@@ -171,11 +259,12 @@ async function route() {
   if (pm) return parentPage(pm[1]);
 
   if (!session) return loginPage();
-  const tm = h.match(/^#\/t\/([0-9a-f-]{36})\/(next|courts|setup)$/i);
+  const tm = h.match(/^#\/t\/([0-9a-f-]{36})\/(next|courts|setup|results)$/i);
   if (tm) {
     const [, id, tab] = tm;
     if (tab === 'next') return nextPage(id);
     if (tab === 'courts') return courtsPage(id);
+    if (tab === 'results') return resultsPage(id);
     return setupPage(id);
   }
   return homePage();
@@ -273,7 +362,7 @@ async function loadT(id) {
 }
 
 function shell(t, tab, body) {
-  const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['setup', 'Setup', ICON.edit]];
+  const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['results', 'Results', UI.trophy], ['setup', 'Setup', ICON.edit]];
   return `
     <header class="top">
       <div class="row"><img class="logo" src="logo.png" alt="High Performance Hankook"><span class="eyebrow">${esc(t.event_date || '')}</span></div>
@@ -346,6 +435,7 @@ async function nextPage(id) {
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span>
             ${s.key === 'done' ? cornerChip(m.corner) : `<br><button class="corner-btn ${m.corner ? m.corner.toLowerCase() : ''}" data-act="corner" data-m="${m.id}" aria-label="Corner: ${m.corner || 'not set'}. Tap to change">${m.corner ? (m.corner === 'Blue' ? 'Chung · Blue' : 'Hong · Red') : 'Set corner'}</button>`}</div>
         </div>
+        ${m.event === 'Sparring' && s.key !== 'done' && needsWeighIn(a, matches) ? `<button class="weigh need" data-act="weigh" data-a="${a.id}">⚖ Weigh-in not done — tap when passed</button>` : ''}
         ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(evLabel(o))} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${['done', 'now', 'past'].includes(s.key) ? '' : `
         <div class="tools">
@@ -388,6 +478,7 @@ async function nextPage(id) {
 
     const filters = ['All', 'Sparring', 'Poomsae'];
     const body = `
+      ${coachBanner(coachLoad(t, matches, courts), t)}
       ${needNext.length ? `<div class="sub-h">Next round needed</div><div class="list">${needNext.map(nextForm).join('')}</div>` : ''}
       <div class="chips">${filters.map((f) => `<button class="chip-btn ${ui.filter === f ? 'on' : ''}" data-act="filter" data-f="${f}">${f}</button>`).join('')}</div>
       ${!matches.length ? `<div class="empty">No matches yet. Add athletes and match numbers in <a href="#/t/${id}/setup">Setup</a>.</div>` : ''}
@@ -428,6 +519,13 @@ async function nextPage(id) {
       const nextC = m.corner === 'Blue' ? 'Red' : m.corner === 'Red' ? null : 'Blue';
       m.corner = nextC;
       await must(sb.from('t_matches').update({ corner: nextC }).eq('id', m.id));
+      return render();
+    }
+    if (act === 'weigh') {
+      const a = cache.byId[el.dataset.a];
+      a.weigh_in_at = a.weigh_in_at ? null : new Date().toISOString();
+      await must(sb.from('t_athletes').update({ weigh_in_at: a.weigh_in_at }).eq('id', a.id));
+      toast(a.weigh_in_at ? `${first(a.name)} passed weigh-in` : 'Weigh-in undone');
       return render();
     }
     if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(); }
@@ -513,6 +611,7 @@ async function courtsPage(id) {
     }
     const y = window.scrollY;
     paint(t, 'courts', `
+      ${coachBanner(coachLoad(t, matches, courts), t)}
       <p class="pad small muted" style="margin:0;padding-bottom:0">Type the match number on the mat and tap <strong>Set</strong> once. After that, tap <strong>+</strong> each time a match finishes.</p>
       <div class="courts">${cells.join('')}</div>`);
     window.scrollTo(0, y);
@@ -555,6 +654,82 @@ async function courtsPage(id) {
   startPoll(rid, () => (document.activeElement?.matches('input') ? Promise.resolve() : render()), POLL_MS);
 }
 
+// ---------- Results ----------
+const MEDAL = { Gold: '🥇', Silver: '🥈', Bronze: '🥉' };
+function athleteResults(a, matches) {
+  const out = [];
+  for (const ev of ['Sparring', 'Poomsae']) {
+    const ms = matches.filter((m) => m.athlete_id === a.id && m.event === ev).sort((x, y) => x.match_no - y.match_no);
+    if (!ms.length) continue;
+    const medal = ms.find((m) => MEDAL[m.result]);
+    const last = [...ms].reverse().find((m) => m.result);
+    let txt;
+    if (medal) txt = `${MEDAL[medal.result]} ${medal.result}`;
+    else if (last?.result === 'Loss') txt = last.round ? `reached ${last.round}` : 'competed';
+    else if (last?.result === 'Win') txt = `won${last.round ? ' ' + last.round : ''}, still going`;
+    else if (last) txt = last.result;
+    else txt = 'not finished';
+    const wins = ms.filter((m) => m.result === 'Win' || m.result === 'Gold').length;
+    out.push({ ev, txt, medal: medal?.result, wins });
+  }
+  return out;
+}
+async function resultsPage(id) {
+  app.onsubmit = null; app.onchange = null;
+  const build = () => {
+    const { t, athletes, matches } = cache;
+    const per = athletes.map((a) => ({ a, r: athleteResults(a, matches) })).filter((x) => x.r.length);
+    const tally = { Gold: 0, Silver: 0, Bronze: 0 };
+    per.forEach(({ r }) => r.forEach((x) => { if (x.medal) tally[x.medal]++; }));
+    const total = tally.Gold + tally.Silver + tally.Bronze;
+    const order = (x) => Math.min(...x.r.map((y) => ({ Gold: 0, Silver: 1, Bronze: 2 }[y.medal] ?? 3)));
+    per.sort((x, y) => order(x) - order(y) || x.a.name.localeCompare(y.a.name));
+    const text = [
+      `🏆 ${t.name} results — ${t.signoff}`,
+      `🥇 ${tally.Gold}   🥈 ${tally.Silver}   🥉 ${tally.Bronze}${total ? `   (${total} medal${total > 1 ? 's' : ''})` : ''}`,
+      '',
+      ...per.map(({ a, r }) => `${shortName(a.name).toUpperCase()} — ${r.map((x) => `${x.ev} ${x.txt}`).join(' · ')}`),
+      '',
+      'So proud of every athlete today. Thank you, families! 🧡',
+    ].join('\n');
+    return { t, per, tally, text };
+  };
+  const render = async () => {
+    await loadT(id);
+    const { t, per, tally, text } = build();
+    const body = `
+      <div class="pad stack">
+        <div class="tally">
+          <div><span>🥇</span><strong>${tally.Gold}</strong><small>Gold</small></div>
+          <div><span>🥈</span><strong>${tally.Silver}</strong><small>Silver</small></div>
+          <div><span>🥉</span><strong>${tally.Bronze}</strong><small>Bronze</small></div>
+        </div>
+        ${per.length ? per.map(({ a, r }) => `
+          <div class="trow"><div><div class="t">${esc(a.name)}</div>
+            ${r.map((x) => `<div class="small ${x.medal ? '' : 'muted'}">${esc(x.ev)}: ${esc(x.txt)}</div>`).join('')}</div></div>`).join('')
+        : '<div class="empty">Results show up here as coaches enter them on Up Next.</div>'}
+        <div class="rowx">
+          <button class="btn dark" style="flex:1" data-act="postres">${UI.users}Post to group</button>
+          <button class="btn ghost" style="flex:1" data-act="copyres">${UI.link}Copy text</button>
+        </div>
+        <details><summary class="small">Preview message</summary><pre class="preview">${esc(text)}</pre></details>
+      </div>`;
+    paint(t, 'results', body);
+  };
+  app.onclick = async (e) => {
+    const el = e.target.closest('[data-act]');
+    if (!el || !cache.t) return;
+    const { text } = build();
+    if (el.dataset.act === 'postres') return openMessage('group', null, text);
+    if (el.dataset.act === 'copyres') {
+      try { await navigator.clipboard.writeText(text); toast('Results copied'); } catch { toast('Copy not allowed — use Post to group'); }
+    }
+  };
+  const rid = routeId;
+  await render();
+  startPoll(rid, render, POLL_MS);
+}
+
 // ---------- Setup ----------
 async function setupPage(id) {
   app.onsubmit = null;
@@ -574,6 +749,11 @@ async function setupPage(id) {
             <div class="field"><label for="sg">Alert at</label><input id="sg" type="number" min="1" max="20" value="${t.group_alert_at}" inputmode="numeric" aria-describedby="sgh"></div>
           </div>
           <span id="sgh" class="small muted">"Alert at" = how many matches away an athlete moves into the Up Next section (7 = warm-up time).</span>
+          <div class="grid2">
+            <div class="field"><label for="sk">Coaches today</label><input id="sk" type="number" min="1" max="12" value="${t.coaches}" inputmode="numeric"></div>
+            <div class="field"><label for="sa">Arrive by</label><input id="sa" value="${esc(t.arrival || '')}" placeholder="e.g. 8:00 AM"></div>
+          </div>
+          <div class="field"><label for="sv">Venue / address</label><input id="sv" value="${esc(t.venue || '')}" placeholder="e.g. Repsol Sport Centre, 2225 Macleod Trail SE"></div>
           <div class="field"><label for="so">Message sign-off</label><input id="so" value="${esc(t.signoff)}"></div>
           <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save settings</button>
           <button class="btn danger" type="button" data-act="deltour">${UI.trash}Delete</button></div>
@@ -617,6 +797,14 @@ async function setupPage(id) {
         <button class="btn dark block" type="submit">${UI.plus}Save &amp; add next</button>
       </form>` : ''}
 
+      ${athletes.length ? `
+      <div class="section stack">
+        <h2>Day-before info</h2>
+        <div class="small muted">Sends each family the venue, arrival time, their child's matches, gear list and live link.${!t.venue || !t.arrival ? ' <strong style="color:var(--red-ink)">Add venue and arrival time in Tournament settings first.</strong>' : ''}</div>
+        <button class="btn ${t.group_schedule_sent_at ? 'ghost' : 'dark'} block" data-act="groupsched">${t.group_schedule_sent_at ? UI.check + 'Schedule posted ' + ago(t.group_schedule_sent_at) + ' · post again' : UI.users + 'Post full schedule to group'}</button>
+        <div class="small muted">${athletes.filter((x) => x.dayinfo_sent_at).length} of ${athletes.length} families messaged individually (button on each athlete below).</div>
+      </div>` : ''}
+
       <div class="section stack">
         <h2>Athletes &amp; matches</h2>
         ${athletes.length ? athletes.map((a) => {
@@ -624,12 +812,14 @@ async function setupPage(id) {
           return `
           <div class="ath">
             <div class="rowx" style="justify-content:space-between;align-items:flex-start">
-              <div><div class="t" style="font-weight:700">${esc(a.name)}</div>
+              <div><div class="t" style="font-weight:700">${esc(a.name)}${a.belt ? ` <span class="small muted" style="font-weight:400">· ${esc(a.belt)}</span>` : ''}</div>
                 <div class="small muted">${esc(a.guardian_name || 'No parent name')} · ${a.phone ? esc(a.phone) : '<span style="color:var(--red-ink)">No phone</span>'} · ${a.channel === 'sms' ? 'Text' : 'WhatsApp'}</div></div>
               <button class="linkbtn" data-act="channel" data-a="${a.id}">Use ${a.channel === 'sms' ? 'WhatsApp' : 'Text'}</button>
             </div>
             ${ms.map((m) => `<div class="mrow"><span>${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''} ${cornerChip(m.corner)}${m.result ? ' · <strong>' + esc(m.result) + '</strong>' : ''}</span>
               <span class="rowx"><strong>C${m.court} · #${m.match_no}</strong><button class="linkbtn red" data-act="delm" data-m="${m.id}" aria-label="Delete match ${m.match_no}">${UI.trash}</button></span></div>`).join('') || '<div class="small muted">No matches yet</div>'}
+            ${isBlackBelt(a) ? `<button class="weigh ${a.weigh_in_at ? 'ok' : 'need'}" data-act="weigh" data-a="${a.id}">${a.weigh_in_at ? '⚖ Weigh-in passed ✓ (tap to undo)' : '⚖ Weigh-in not done — tap when passed'}</button>` : ''}
+            <button class="btn ${a.dayinfo_sent_at ? 'ghost' : ''} block" style="height:40px" data-act="dayinfo" data-a="${a.id}">${a.dayinfo_sent_at ? UI.check + 'Day-before info sent ' + ago(a.dayinfo_sent_at) : UI.chat + 'Send day-before info to parent'}</button>
             <div class="rowx" style="flex-wrap:wrap">
               <button class="linkbtn" data-act="copylink" data-a="${a.id}">${UI.link}Copy parent link</button>
               <button class="linkbtn" data-act="editphone" data-a="${a.id}">${UI.phone}Edit phone</button>
@@ -654,6 +844,9 @@ async function setupPage(id) {
         courts: Math.min(12, Math.max(1, parseInt(app.querySelector('#sc').value, 10) || t.courts)),
         group_alert_at: Math.min(20, Math.max(1, parseInt(app.querySelector('#sg').value, 10) || 3)),
         signoff: app.querySelector('#so').value.trim() || 'Team Hankook',
+        coaches: Math.min(12, Math.max(1, parseInt(app.querySelector('#sk').value, 10) || 3)),
+        arrival: app.querySelector('#sa').value.trim() || null,
+        venue: app.querySelector('#sv').value.trim() || null,
       }).eq('id', id));
       toast('Settings saved'); render();
     };
@@ -662,7 +855,7 @@ async function setupPage(id) {
       const name = an.value.trim();
       const s = roster.find((r) => r.name.toLowerCase() === name.toLowerCase());
       await must(sb.from('t_athletes').insert({
-        tournament_id: id, student_id: s?.id || null, name: s?.name || name,
+        tournament_id: id, student_id: s?.id || null, name: s?.name || name, belt: s?.belt || null,
         guardian_name: app.querySelector('#ag').value.trim() || null,
         phone: app.querySelector('#ap').value.trim() || null,
         channel: app.querySelector('#ac').value,
@@ -702,6 +895,24 @@ async function setupPage(id) {
       toast('Tournament deleted');
       location.hash = '#/'; return;
     }
+    if (act === 'weigh') {
+      a.weigh_in_at = a.weigh_in_at ? null : new Date().toISOString();
+      await must(sb.from('t_athletes').update({ weigh_in_at: a.weigh_in_at }).eq('id', a.id));
+      toast(a.weigh_in_at ? `${first(a.name)} passed weigh-in` : 'Weigh-in undone');
+      return render();
+    }
+    if (act === 'dayinfo') {
+      if (!a.phone) return toast(`No phone number for ${first(a.name)}`);
+      const ms = cache.matches.filter((m) => m.athlete_id === a.id);
+      openMessage(a.channel, a.phone, dayBeforeMessage(cache.t, a, ms));
+      sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).eq('id', a.id).then(() => render());
+      return;
+    }
+    if (act === 'groupsched') {
+      openMessage('group', null, groupScheduleMessage(cache.t, cache.athletes, cache.matches));
+      sb.from('t_tournaments').update({ group_schedule_sent_at: new Date().toISOString() }).eq('id', id).then(() => render());
+      return;
+    }
     if (act === 'channel') { await must(sb.from('t_athletes').update({ channel: a.channel === 'sms' ? 'whatsapp' : 'sms' }).eq('id', a.id)); return render(); }
     if (act === 'editphone') {
       const v = prompt(`Parent phone for ${a.name}`, a.phone || '');
@@ -723,7 +934,11 @@ async function setupPage(id) {
 async function parentPage(token) {
   app.onclick = null; app.onchange = null; app.onsubmit = null;
   const render = async () => {
-    const { data, error } = await sb.rpc('t_parent_view', { p_token: token });
+    let res;
+    try { res = await sb.rpc('t_parent_view', { p_token: token }); } catch (err) { setNet(false); return; }
+    const { data, error } = res;
+    if (error && isNetErr(error)) { setNet(false); return; }
+    setNet(true);
     if (error || !data) {
       app.innerHTML = `<div class="empty">This link isn't active. Please check with your coach.</div>`;
       stopPoll(); return;
