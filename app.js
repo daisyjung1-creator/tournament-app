@@ -92,6 +92,15 @@ const cornerChip = (c) => (c ? `<span class="corner ${c.toLowerCase()}">${c === 
 const CHECKIN_AT = 3; // 2–3 matches away: check in at the ring; more than that: warm up
 const GEAR = '✅ Protective gear on under the uniform\n✅ Mouthguard\n✅ Water bottle';
 
+// which message stage a match is in
+const stageOf = (s) => (s.away == null ? 'schedule' : s.away === 1 ? 'next' : s.away <= CHECKIN_AT ? 'checkin' : 'warmup');
+const STAGE_LABEL = { schedule: 'schedule', warmup: 'warm-up', checkin: 'check-in', next: 'up next' };
+const STAGE_ORDER = ['schedule', 'warmup', 'checkin', 'next'];
+const logLine = (who, entries) => {
+  const parts = STAGE_ORDER.filter((k) => entries?.[k]).map((k) => `${STAGE_LABEL[k]} ${ago(entries[k])}`);
+  return parts.length ? `${who}: ${parts.join(' · ')}` : '';
+};
+
 function groupMessage(m, a, t, s) {
   const who = shortName(a.name).toUpperCase();
   const where = `Court ${m.court}, Match #${m.match_no} (${evLabel(m)})${m.corner ? ' · ' + cornerMsg(m.corner) : ''}`;
@@ -283,11 +292,14 @@ async function nextPage(id) {
 
     const card = ({ m, a, s }) => {
       const clash = s.key === 'done' ? [] : clashes(m);
+      const nl = m.notify_log || {};
+      const stage = stageOf(s);
+      const sentP = !!nl.parent?.[stage], sentG = !!nl.group?.[stage];
       const log = [
         a.checked_in_at ? `Checked in ${ago(a.checked_in_at)}` : '',
-        m.group_notified_at ? `Group posted ${ago(m.group_notified_at)}` : '',
-        m.parent_notified_at ? `Parent messaged ${ago(m.parent_notified_at)}` : '',
-      ].filter(Boolean).join(' · ');
+        logLine('Parent', nl.parent),
+        logLine('Group', nl.group),
+      ].filter(Boolean).join('<br>');
       return `
       <article class="card ${s.key === 'now' || s.key === 'deck' ? 'hot' : ''}">
         <div class="head">
@@ -298,8 +310,8 @@ async function nextPage(id) {
         ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(evLabel(o))} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${['done', 'now', 'past'].includes(s.key) ? '' : `
         <div class="tools">
-          <button class="btn" style="flex:1" data-act="group" data-m="${m.id}">Post to group</button>
-          <button class="btn dark" style="flex:1" data-act="parent" data-m="${m.id}">Message parent</button>
+          <button class="btn ${sentG ? 'ghost' : ''}" style="flex:1" data-act="group" data-m="${m.id}">${sentG ? 'Group ✓ again' : 'Post to group'}</button>
+          <button class="btn ${sentP ? 'ghost' : 'dark'}" style="flex:1" data-act="parent" data-m="${m.id}">${sentP ? 'Parent ✓ again' : 'Message parent'}</button>
         </div>`}
         <div class="tools">
           <button class="btn icon ${a.checked_in_at ? 'on' : 'ghost'}" aria-label="${a.checked_in_at ? 'Checked in — tap to undo' : 'Mark checked in'}" aria-pressed="${!!a.checked_in_at}" data-act="checkin" data-a="${a.id}">${ICON.check}</button>
@@ -308,7 +320,7 @@ async function nextPage(id) {
             ${['', 'Win', 'Loss', 'Gold', 'Silver', 'Bronze', 'Done'].map((r) => `<option value="${r}" ${(m.result || '') === r ? 'selected' : ''}>${r || 'Result…'}</option>`).join('')}
           </select>
         </div>
-        ${log ? `<div class="log">${esc(log)}</div>` : ''}
+        ${log ? `<div class="log">${log}</div>` : ''}
       </article>`;
     };
 
@@ -363,7 +375,12 @@ async function nextPage(id) {
       if (act === 'parent' && !a.phone) return toast(`No phone number for ${first(a.name)} — add it in Setup`);
       const text = act === 'group' ? groupMessage(m, a, cache.t, s) : parentMessage(m, a, cache.t, s);
       const col = act === 'group' ? 'group_notified_at' : 'parent_notified_at';
-      sb.from('t_matches').update({ [col]: new Date().toISOString() }).eq('id', m.id).then(() => render());
+      const who = act === 'group' ? 'group' : 'parent';
+      const now = new Date().toISOString();
+      const nl = { ...(m.notify_log || {}) };
+      nl[who] = { ...(nl[who] || {}), [stageOf(s)]: now };
+      m.notify_log = nl;
+      sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
       openMessage(act === 'group' ? 'group' : a.channel, a.phone, text);
       return;
     }
