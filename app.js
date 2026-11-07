@@ -390,9 +390,15 @@ async function nextPage(id) {
       const later = cache.matches.filter((o) => o.athlete_id === m.athlete_id && o.event === m.event && o.match_no > m.match_no && !o.result);
       if (later.length && confirm(`${first(cache.byId[m.athlete_id]?.name)} is out of ${m.event}. Remove the ${later.length} later ${m.event.toLowerCase()} match${later.length > 1 ? 'es' : ''} (${later.map((o) => '#' + o.match_no).join(', ')})?`)) dropLater = later.map((o) => o.id);
     }
-    await must(sb.from('t_matches').update({ result: el.value || null }).eq('id', el.dataset.m));
+    // medals follow from the round: semifinal loss = bronze (both losers), final = gold / silver
+    let result = el.value || null;
+    if (m?.round === 'Semifinal' && result === 'Loss') result = 'Bronze';
+    if (m?.round === 'Final' && result === 'Win') result = 'Gold';
+    if (m?.round === 'Final' && result === 'Loss') result = 'Silver';
+    await must(sb.from('t_matches').update({ result }).eq('id', el.dataset.m));
     if (dropLater.length) await must(sb.from('t_matches').delete().in('id', dropLater));
-    toast(el.value ? `Saved: ${el.value}` : 'Result cleared');
+    const medal = { Gold: ' 🥇', Silver: ' 🥈', Bronze: ' 🥉' }[result] || '';
+    toast(result ? `Saved: ${result}${medal}` : 'Result cleared');
     render();
   };
   app.onsubmit = async (e) => {
