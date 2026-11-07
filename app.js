@@ -324,7 +324,31 @@ async function homePage() {
         <div class="field"><label for="tc">Courts</label><input id="tc" type="number" min="1" max="12" value="4" inputmode="numeric"></div>
       </div>
       <button class="btn dark block" type="submit">${UI.flag}Create tournament</button>
-    </form>`;
+    </form>
+    <div id="adminbox"></div>`;
+  // admin-only: change the shared coach password
+  sb.rpc('t_am_admin').then(({ data }) => {
+    const box = app.querySelector('#adminbox');
+    if (!data || !box) return;
+    box.innerHTML = `
+      <details class="section">
+        <summary>Coach password</summary>
+        <form class="stack" id="cpw" style="padding-top:10px">
+          <div class="field"><label for="cp1">New coach password</label><input id="cp1" type="text" autocomplete="off" minlength="8" required placeholder="At least 8 characters"></div>
+          <div class="small muted">Coaches signed in with the old password will be signed out. Share the new one with them.</div>
+          <button class="btn dark block" type="submit">${UI.save}Change coach password</button>
+        </form>
+      </details>`;
+    box.querySelector('#cpw').onsubmit = async (e) => {
+      e.preventDefault();
+      const pw = box.querySelector('#cp1').value.trim();
+      if (pw.length < 8) return toast('Use at least 8 characters');
+      if (!confirm(`Change the coach password to "${pw}"?`)) return;
+      await must(sb.rpc('t_set_coach_password', { p_password: pw }));
+      box.querySelector('#cp1').value = '';
+      toast('Coach password changed');
+    };
+  });
   app.querySelector('[data-act=logout]').onclick = () => sb.auth.signOut();
   app.onchange = null; app.onsubmit = null;
   app.onclick = async (e) => {
