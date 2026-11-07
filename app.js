@@ -107,10 +107,18 @@ function openMessage(channel, phone, text) {
   const enc = encodeURIComponent(text);
   const d = digits(phone);
   let url;
-  if (channel === 'group') url = `whatsapp://send?text=${enc}`;
+  // wa.me opens the WhatsApp app when it's installed, and a WhatsApp web page (not an error) when it isn't
+  if (channel === 'group') url = `https://wa.me/?text=${enc}`;
   else if (channel === 'sms') url = `sms:${d ? '+' + d : ''}?&body=${enc}`;
-  else url = `whatsapp://send?phone=${d}&text=${enc}`;
+  else url = `https://wa.me/${d}?text=${enc}`;
   if (typeof window.__onOpenMessage === 'function') return window.__onOpenMessage(url); // test hook
+  if (url.startsWith('https:')) {
+    // open in a new tab so the coach app stays open behind it
+    const w = window.open(url, '_blank');
+    if (w) w.opener = null;
+    else window.location.href = url;
+    return;
+  }
   window.location.href = url;
 }
 
