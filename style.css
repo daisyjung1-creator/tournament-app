@@ -4,9 +4,9 @@
   --line: #E5E5E5;
   --soft: #F4F4F4;
   /* Team colour — change these three lines to retheme the whole app */
-  --accent: #FF6A00;        /* team orange */
-  --accent-soft: #FFE9D9;   /* light orange for "getting close" */
-  --accent-ink: #8F3A00;    /* dark orange text on light orange */
+  --accent: #F37021;        /* team orange (Hermès-style) */
+  --accent-soft: #FDEBDD;   /* light orange for "getting close" */
+  --accent-ink: #8A3A0A;    /* dark orange text on light orange */
   --on-accent: #111111;     /* text on orange (black reads better than white) */
   --red-ink: #A1121F;       /* delete / warnings */
 }
