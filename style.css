@@ -30,7 +30,7 @@ header.top { padding: calc(14px + env(safe-area-inset-top)) 20px 16px; display: 
 header.top .eyebrow { color: #BDBDBD; }
 header.top .linkbtn { color: #fff; }
 header.top h1 { color: #fff; }
-.logo { height: 30px; width: auto; display: block; }
+.logo { height: 30px; width: auto; max-width: 100%; display: block; align-self: flex-start; object-fit: contain; flex: none; }
 .logo.big { height: 56px; }
 header.top .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 a.back { color: #fff; text-decoration: none; font-size: 14px; font-weight: 600; }
@@ -127,3 +127,6 @@ details summary { cursor: pointer; font-weight: 700; font-size: 15px; min-height
 
 .clash { background: var(--accent-soft); color: var(--accent-ink); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.4; }
 .clash strong { color: #5C2400; }
+
+.gear { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.gear ul { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }

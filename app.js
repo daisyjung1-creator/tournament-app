@@ -82,13 +82,15 @@ function statusOf(m, courts) {
 }
 
 // ---------- messages ----------
+const GEAR = '✅ Protective gear on under the uniform\n✅ Mouthguard\n✅ Water bottle';
+
 function groupMessage(m, a, t, s) {
   const who = shortName(a.name).toUpperCase();
   const where = `Court ${m.court}, Match #${m.match_no} (${m.event})`;
   let line;
   if (s.away === 0 || s.away === 1) line = `🔴 ${who} is ${s.away === 0 ? 'ON THE MAT' : 'UP NEXT'} — ${where}. Please come to Court ${m.court} now.`;
-  else if (s.away > 1) line = `🟡 ${who} — get ready! ${where}, about ${s.away} matches away. Please head to the waiting area.`;
-  else line = `🟡 ${who} — ${where}. We'll post again as the court moves.`;
+  else if (s.away > 1) line = `🟡 ${who} — get ready! ${where}, about ${s.away} matches away. Please head to the waiting area.\n\n${GEAR}\n`;
+  else line = `🟡 ${who} — ${where}. We'll post again as the court moves.\n\n${GEAR}\n`;
   return `${line}\nLive status: ${parentLink(a.token)}`;
 }
 
@@ -100,7 +102,8 @@ function parentMessage(m, a, t, s) {
   else if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
   else if (s.away > 1) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please bring ${child} to the waiting area by Court ${m.court} now.`;
   else body = `${child} is scheduled on Court ${m.court} (Match #${m.match_no}, ${m.event}). Please stay close to the waiting area.`;
-  return `${hi} ${body}\nLive status: ${parentLink(a.token)}\n– ${t.signoff}`;
+  const gear = s.away === 0 ? '' : `\n\nBefore heading over, please check:\n${GEAR}`;
+  return `${hi} ${body}${gear}\n\nLive status: ${parentLink(a.token)}\n– ${t.signoff}`;
 }
 
 function openMessage(channel, phone, text) {
@@ -623,6 +626,10 @@ async function parentPage(token) {
           <div><span class="l">Now on court</span><span class="v">${nxt.current != null ? '#' + nxt.current : '—'}</span></div>
         </div>
         <span style="font-size:14px;line-height:1.4">${esc(msg)}</span>
+      </section>
+      <section class="pad" style="padding-bottom:0">
+        <div class="gear"><strong>Gear check</strong>
+          <ul><li>Protective gear on under the uniform</li><li>Mouthguard</li><li>Water bottle</li></ul></div>
       </section>` : `<div class="hero"><span style="font-size:16px;font-weight:700">All done for today. Great job, ${esc(childFirst)}!</span></div>`}
       <div class="pad">
         <h2>Today</h2>
