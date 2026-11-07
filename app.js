@@ -145,7 +145,7 @@ async function route() {
 function loginPage() {
   app.onclick = null; app.onchange = null; app.onsubmit = null;
   app.innerHTML = `
-    <header class="top"><span class="eyebrow">Tournament Day</span><h1>Coach sign in</h1></header>
+    <header class="top" style="padding-top:calc(28px + env(safe-area-inset-top));padding-bottom:24px;gap:14px"><img class="logo big" src="logo.png" alt="High Performance Hankook"><div><span class="eyebrow">Tournament Day</span><h1>Coach sign in</h1></div></header>
     <form class="pad stack" id="login">
       ${ui.adminLogin ? `
       <div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username" required></div>` : ''}
@@ -168,12 +168,12 @@ function loginPage() {
 
 // ---------- home ----------
 async function homePage() {
-  app.innerHTML = `<header class="top"><span class="eyebrow">Tournament Day</span><h1>Tournaments</h1></header><p class="pad muted">Loading…</p>`;
+  app.innerHTML = `<header class="top"><img class="logo" src="logo.png" alt="High Performance Hankook"><h1>Tournaments</h1></header><p class="pad muted">Loading…</p>`;
   const list = await must(sb.from('t_tournaments').select('*').eq('archived', false).order('event_date', { ascending: false, nullsFirst: true }));
   const today = new Date().toISOString().slice(0, 10);
   app.innerHTML = `
     <header class="top">
-      <div class="row"><span class="eyebrow">Tournament Day</span><button class="linkbtn" data-act="logout">Sign out</button></div>
+      <div class="row"><img class="logo" src="logo.png" alt="High Performance Hankook"><button class="linkbtn" data-act="logout">Sign out</button></div>
       <h1>Tournaments</h1>
     </header>
     <div class="list">
@@ -236,7 +236,8 @@ function shell(t, tab, body) {
   const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['setup', 'Setup', ICON.edit]];
   return `
     <header class="top">
-      <div class="row"><a class="back" href="#/">‹ Tournaments</a><span class="eyebrow">${esc(t.event_date || '')}</span></div>
+      <div class="row"><img class="logo" src="logo.png" alt="High Performance Hankook"><span class="eyebrow">${esc(t.event_date || '')}</span></div>
+      <a class="back" href="#/">‹ All tournaments</a>
       <h1>${esc(t.name)}</h1>
     </header>
     ${body}
@@ -357,10 +358,12 @@ async function courtsPage(id) {
       cells.push(`
         <section class="court ${near ? 'ours' : ''}">
           <div class="rowx" style="justify-content:space-between"><strong>Court ${c}</strong>${near ? '<span class="dot" role="img" aria-label="Our athlete is close"></span>' : ''}</div>
-          <form class="rowx" data-court="${c}" style="gap:6px">
-            <label for="cn${c}" class="eyebrow" style="font-size:11px">Now #</label>
-            <input id="cn${c}" class="numin" type="number" min="1" inputmode="numeric" value="${cur ?? ''}" placeholder="—" aria-label="Current match on court ${c}">
-            <button class="btn ghost" type="submit" style="height:36px;padding:0 10px;font-size:13px">Set</button>
+          <form data-court="${c}" style="display:flex;flex-direction:column;gap:4px">
+            <label for="cn${c}" class="eyebrow" style="font-size:11px">Now on mat</label>
+            <div class="rowx" style="gap:6px">
+              <input id="cn${c}" class="numin" type="number" min="1" inputmode="numeric" value="${cur ?? ''}" placeholder="#">
+              <button class="btn ghost" type="submit" style="height:44px;padding:0 10px;font-size:13px;flex:none">Set</button>
+            </div>
           </form>
           <div class="next">${nextTxt}</div>
           <div class="rowx">
@@ -595,14 +598,15 @@ async function parentPage(token) {
       else msg = `Court ${nxt.court} hasn't started yet. This page updates automatically.`;
     }
     app.innerHTML = `
-      <header class="pad stack" style="gap:4px">
-        <span class="eyebrow">${esc(data.tournament)} · Live</span>
-        <h1>${esc(data.athlete)}</h1>
+      <header class="parent-top">
+        <img class="logo" src="logo.png" alt="High Performance Hankook">
+        <div><span class="eyebrow">${esc(data.tournament)} · Live</span>
+        <h1 style="color:#fff">${esc(data.athlete)}</h1></div>
       </header>
       ${nxt ? `
       <section class="hero" aria-live="polite">
         <div class="rowx" style="justify-content:space-between">
-          <span class="eyebrow" style="color:#fff">Next match</span>
+          <span class="eyebrow accent" style="color:var(--accent)">Next match</span>
           <span class="badge">${nxt.s.label}</span>
         </div>
         <div class="big">
