@@ -138,3 +138,16 @@ details summary { cursor: pointer; font-weight: 700; font-size: 15px; min-height
 .corner-btn { margin-top: 6px; min-height: 32px; padding: 4px 10px; border-radius: 10px; border: 1px dashed #BDBDBD; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .corner-btn.blue { background: #1F4FD1; border: 0; color: #fff; }
 .corner-btn.red { background: #C8102E; border: 0; color: #fff; }
+
+/* button icons + tap feedback */
+.btn .i, .linkbtn .i { width: 18px; height: 18px; flex: none; }
+.linkbtn { display: inline-flex; align-items: center; gap: 4px; }
+.linkbtn .i { width: 15px; height: 15px; }
+.court .btn .i { width: 22px; height: 22px; stroke-width: 2.6; }
+.court [data-act=inc] span { font-size: 14px; }
+.btn, .chip-btn, .corner-btn, .linkbtn, nav.bottom a { transition: transform .08s ease, filter .08s ease, background-color .15s ease; touch-action: manipulation; }
+.btn:active:not(:disabled), .chip-btn:active, .corner-btn:active { transform: scale(.96); filter: brightness(.92); }
+.linkbtn:active, nav.bottom a:active { opacity: .6; }
+.btn:focus-visible, .chip-btn:focus-visible, .corner-btn:focus-visible, .linkbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card .tools .btn { white-space: nowrap; padding: 0 8px; gap: 5px; }
+.card .tools .btn .i { width: 16px; height: 16px; }

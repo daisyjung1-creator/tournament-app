@@ -69,6 +69,23 @@ const ICON = {
   phone: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/></svg>',
 };
 
+const UI = {
+  users: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
+  chat: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  login: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>',
+  plus: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  minus: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg>',
+  useradd: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>',
+  save: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>',
+  trash: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  link: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
+  phone: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/></svg>',
+  trophy: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>',
+  skip: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 4 10 8-10 8z"/><path d="M19 5v14"/></svg>',
+  check: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+  flag: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4a1 1 0 0 1 1-1h12l-2 4 2 4H5"/></svg>',
+};
+
 // ---------- match status ----------
 function statusOf(m, courts) {
   if (m.result) return { key: 'done', label: m.result === 'Done' ? 'DONE' : m.result.toUpperCase(), away: Infinity };
@@ -173,7 +190,7 @@ function loginPage() {
       <div class="field"><label for="em">Email</label><input id="em" type="email" autocomplete="username" required></div>` : ''}
       <div class="field"><label for="pw">${ui.adminLogin ? 'Password' : 'Coach password'}</label>
         <input id="pw" type="password" autocomplete="current-password" required></div>
-      <button class="btn dark block" type="submit">Sign in</button>
+      <button class="btn dark block" type="submit">${UI.login}Sign in</button>
       <button class="linkbtn" type="button" data-act="toggle-admin">${ui.adminLogin ? 'Use coach password' : 'Sign in with admin email'}</button>
     </form>`;
   app.querySelector('[data-act=toggle-admin]').onclick = () => { ui.adminLogin = !ui.adminLogin; loginPage(); };
@@ -216,7 +233,7 @@ async function homePage() {
         <div class="field"><label for="td">Date</label><input id="td" type="date" value="${today}"></div>
         <div class="field"><label for="tc">Courts</label><input id="tc" type="number" min="1" max="12" value="4" inputmode="numeric"></div>
       </div>
-      <button class="btn dark block" type="submit">Create</button>
+      <button class="btn dark block" type="submit">${UI.flag}Create tournament</button>
     </form>`;
   app.querySelector('[data-act=logout]').onclick = () => sb.auth.signOut();
   app.onchange = null; app.onsubmit = null;
@@ -310,8 +327,8 @@ async function nextPage(id) {
         ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(evLabel(o))} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${['done', 'now', 'past'].includes(s.key) ? '' : `
         <div class="tools">
-          <button class="btn ${sentG ? 'ghost' : ''}" style="flex:1" data-act="group" data-m="${m.id}">${sentG ? 'Group ✓ again' : 'Post to group'}</button>
-          <button class="btn ${sentP ? 'ghost' : 'dark'}" style="flex:1" data-act="parent" data-m="${m.id}">${sentP ? 'Parent ✓ again' : 'Message parent'}</button>
+          <button class="btn ${sentG ? 'ghost' : ''}" style="flex:1" data-act="group" data-m="${m.id}">${sentG ? UI.check + 'Group again' : UI.users + 'Post to group'}</button>
+          <button class="btn ${sentP ? 'ghost' : 'dark'}" style="flex:1" data-act="parent" data-m="${m.id}">${sentP ? UI.check + 'Parent again' : UI.chat + 'Message parent'}</button>
         </div>`}
         <div class="tools">
           <button class="btn icon ${a.checked_in_at ? 'on' : 'ghost'}" aria-label="${a.checked_in_at ? 'Checked in — tap to undo' : 'Mark checked in'}" aria-pressed="${!!a.checked_in_at}" data-act="checkin" data-a="${a.id}">${ICON.check}</button>
@@ -342,8 +359,8 @@ async function nextPage(id) {
             ${Array.from({ length: t.courts }, (_, i) => i + 1).map((c) => `<option ${c === m.court ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
           <div class="field"><label for="nn${m.id}">Match #</label><input id="nn${m.id}" name="match_no" type="number" min="1" inputmode="numeric" required></div>
         </div>
-        <div class="tools"><button class="btn dark" style="flex:1" type="submit">Add next match</button>
-          <button class="btn ghost" type="button" data-act="skipnext" data-m="${m.id}">Skip</button></div>
+        <div class="tools"><button class="btn dark" style="flex:1" type="submit">${UI.trophy}Add next match</button>
+          <button class="btn ghost" type="button" data-act="skipnext" data-m="${m.id}">${UI.skip}Skip</button></div>
       </form>`;
     };
 
@@ -460,13 +477,13 @@ async function courtsPage(id) {
             <label for="cn${c}" class="eyebrow" style="font-size:11px">Now on mat</label>
             <div class="rowx" style="gap:6px">
               <input id="cn${c}" class="numin" type="number" min="1" inputmode="numeric" value="${cur ?? ''}" placeholder="#">
-              <button class="btn ghost" type="submit" style="height:44px;padding:0 10px;font-size:13px;flex:none">Set</button>
+              <button class="btn ghost" type="submit" style="height:44px;padding:0 10px;font-size:13px;flex:none">${UI.check}Set</button>
             </div>
           </form>
           <div class="next">${nextTxt}</div>
           <div class="rowx">
-            <button class="btn ghost icon" type="button" data-act="dec" data-c="${c}" aria-label="Previous match on court ${c}" ${cur == null ? 'disabled' : ''}>−</button>
-            <button class="btn dark" type="button" style="flex:1" data-act="inc" data-c="${c}" aria-label="Next match on court ${c}">+</button>
+            <button class="btn ghost icon" type="button" data-act="dec" data-c="${c}" aria-label="Previous match on court ${c}" ${cur == null ? 'disabled' : ''}>${UI.minus}</button>
+            <button class="btn dark" type="button" style="flex:1" data-act="inc" data-c="${c}" aria-label="Next match on court ${c}">${UI.plus}<span>Next</span></button>
           </div>
         </section>`);
     }
@@ -534,8 +551,8 @@ async function setupPage(id) {
           </div>
           <span id="sgh" class="small muted">"Alert at" = how many matches away an athlete moves into the Up Next section (7 = warm-up time).</span>
           <div class="field"><label for="so">Message sign-off</label><input id="so" value="${esc(t.signoff)}"></div>
-          <div class="rowx"><button class="btn dark" style="flex:1" type="submit">Save settings</button>
-          <button class="btn danger" type="button" data-act="deltour">Delete tournament</button></div>
+          <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save settings</button>
+          <button class="btn danger" type="button" data-act="deltour">${UI.trash}Delete</button></div>
         </form>
       </details>
 
@@ -551,7 +568,7 @@ async function setupPage(id) {
         </div>
         <div class="field"><label for="ac">Send messages by</label>
           <select id="ac"><option value="whatsapp">WhatsApp</option><option value="sms">Text (SMS)</option></select></div>
-        <button class="btn dark block" type="submit">Add athlete</button>
+        <button class="btn dark block" type="submit">${UI.useradd}Add athlete</button>
       </form>
 
       ${athletes.length ? `
@@ -573,7 +590,7 @@ async function setupPage(id) {
             <option value="">—</option><option value="Blue">Chung · Blue</option><option value="Red">Hong · Red</option></select></div>
         </div>
         <div class="field"><label for="md">Division (optional)</label><input id="md" placeholder="e.g. Cadet F -47kg" value="${esc(keep.division || '')}"></div>
-        <button class="btn dark block" type="submit">Save &amp; add next</button>
+        <button class="btn dark block" type="submit">${UI.plus}Save &amp; add next</button>
       </form>` : ''}
 
       <div class="section stack">
@@ -588,11 +605,11 @@ async function setupPage(id) {
               <button class="linkbtn" data-act="channel" data-a="${a.id}">Use ${a.channel === 'sms' ? 'WhatsApp' : 'Text'}</button>
             </div>
             ${ms.map((m) => `<div class="mrow"><span>${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''} ${cornerChip(m.corner)}${m.result ? ' · <strong>' + esc(m.result) + '</strong>' : ''}</span>
-              <span class="rowx"><strong>C${m.court} · #${m.match_no}</strong><button class="linkbtn red" data-act="delm" data-m="${m.id}" aria-label="Delete match ${m.match_no}">Delete</button></span></div>`).join('') || '<div class="small muted">No matches yet</div>'}
+              <span class="rowx"><strong>C${m.court} · #${m.match_no}</strong><button class="linkbtn red" data-act="delm" data-m="${m.id}" aria-label="Delete match ${m.match_no}">${UI.trash}</button></span></div>`).join('') || '<div class="small muted">No matches yet</div>'}
             <div class="rowx" style="flex-wrap:wrap">
-              <button class="linkbtn" data-act="copylink" data-a="${a.id}">Copy parent link</button>
-              <button class="linkbtn" data-act="editphone" data-a="${a.id}">Edit phone</button>
-              <button class="linkbtn red" data-act="dela" data-a="${a.id}">Remove athlete</button>
+              <button class="linkbtn" data-act="copylink" data-a="${a.id}">${UI.link}Copy parent link</button>
+              <button class="linkbtn" data-act="editphone" data-a="${a.id}">${UI.phone}Edit phone</button>
+              <button class="linkbtn red" data-act="dela" data-a="${a.id}">${UI.trash}Remove athlete</button>
             </div>
           </div>`;
         }).join('') : '<div class="small muted">No athletes yet.</div>'}
