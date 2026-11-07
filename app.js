@@ -423,8 +423,8 @@ function paintPage(html) {
 // ---------- Up Next (waiting-area coach) ----------
 async function nextPage(id) {
   app.onsubmit = null;
-  const render = async () => {
-    const { t, matches, courts, byId } = await loadT(id);
+  const render = async (local) => {
+    const { t, matches, courts, byId } = local && cache.id === id ? cache : await loadT(id);
     const rows = matches
       .filter((m) => ui.filter === 'All' || m.event === ui.filter)
       .map((m) => ({ m, a: byId[m.athlete_id], s: statusOf(m, courts) }))
@@ -521,7 +521,7 @@ async function nextPage(id) {
     const el = e.target.closest('[data-act]');
     if (!el || !cache.t) return;
     const act = el.dataset.act;
-    if (act === 'filter') { ui.filter = el.dataset.f; return render(); }
+    if (act === 'filter') { ui.filter = el.dataset.f; return render(true); }
     if (act === 'group' || act === 'parent') {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
       const a = cache.byId[m.athlete_id];
@@ -534,31 +534,35 @@ async function nextPage(id) {
       const nl = { ...(m.notify_log || {}) };
       nl[who] = { ...(nl[who] || {}), [stageOf(s)]: now };
       m.notify_log = nl;
-      sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
       openMessage(act === 'group' ? 'group' : a.channel, a.phone, text);
+      render(true);
+      sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
       return;
     }
     if (act === 'corner') {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
       const nextC = m.corner === 'Blue' ? 'Red' : m.corner === 'Red' ? null : 'Blue';
       m.corner = nextC;
-      await must(sb.from('t_matches').update({ corner: nextC }).eq('id', m.id));
-      return render();
+      render(true);
+      await must(sb.from('t_matches').update({ corner: nextC }).eq('id', m.id)).catch(() => render());
+      return;
     }
     if (act === 'weigh') {
       const a = cache.byId[el.dataset.a];
       a.weigh_in_at = a.weigh_in_at ? null : new Date().toISOString();
-      await must(sb.from('t_athletes').update({ weigh_in_at: a.weigh_in_at }).eq('id', a.id));
+      render(true);
       toast(a.weigh_in_at ? `${first(a.name)} passed weigh-in` : 'Weigh-in undone');
-      return render();
+      await must(sb.from('t_athletes').update({ weigh_in_at: a.weigh_in_at }).eq('id', a.id)).catch(() => render());
+      return;
     }
-    if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(); }
+    if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(true); }
     if (act === 'checkin') {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
       m.checked_in_at = m.checked_in_at ? null : new Date().toISOString();
-      await must(sb.from('t_matches').update({ checked_in_at: m.checked_in_at }).eq('id', m.id));
+      render(true);
       toast(m.checked_in_at ? `${first(cache.byId[m.athlete_id]?.name)} checked in for #${m.match_no}` : 'Check-in undone');
-      return render();
+      await must(sb.from('t_matches').update({ checked_in_at: m.checked_in_at }).eq('id', m.id)).catch(() => render());
+      return;
     }
   };
   app.onchange = async (e) => {
@@ -575,11 +579,17 @@ async function nextPage(id) {
     if (m?.round === 'Semifinal' && result === 'Loss') result = 'Bronze';
     if (m?.round === 'Final' && result === 'Win') result = 'Gold';
     if (m?.round === 'Final' && result === 'Loss') result = 'Silver';
-    await must(sb.from('t_matches').update({ result }).eq('id', el.dataset.m));
-    if (dropLater.length) await must(sb.from('t_matches').delete().in('id', dropLater));
+    // show it right away, save in the background
+    if (m) m.result = result;
+    if (dropLater.length) cache.matches = cache.matches.filter((o) => !dropLater.includes(o.id));
+    document.activeElement?.blur();
+    render(true);
     const medal = { Gold: ' 🥇', Silver: ' 🥈', Bronze: ' 🥉' }[result] || '';
     toast(result ? `Saved: ${result}${medal}` : 'Result cleared');
-    render();
+    try {
+      await must(sb.from('t_matches').update({ result }).eq('id', el.dataset.m));
+      if (dropLater.length) await must(sb.from('t_matches').delete().in('id', dropLater));
+    } finally { render(); }
   };
   app.onsubmit = async (e) => {
     const f = e.target.closest('form[data-next]');
@@ -603,8 +613,8 @@ async function nextPage(id) {
 
 // ---------- Courts (floor coaches) ----------
 async function courtsPage(id) {
-  const render = async () => {
-    const { t, matches, courts, byId } = await loadT(id);
+  const render = async (local) => {
+    const { t, matches, courts, byId } = local && cache.id === id ? cache : await loadT(id);
     const cells = [];
     for (let c = 1; c <= t.courts; c++) {
       const cur = courts[c];
@@ -643,6 +653,7 @@ async function courtsPage(id) {
 
   const save = async (c, val) => {
     cache.courts[c] = val; // show the change right away
+    render(true);
     await must(sb.from('t_courts').upsert({ tournament_id: id, court: c, current_match: val, updated_at: new Date().toISOString() }, { onConflict: 'tournament_id,court' }));
     await render();
   };
@@ -661,9 +672,8 @@ async function courtsPage(id) {
     const el = e.target.closest('[data-act=inc],[data-act=dec]');
     if (!el || !cache.t) return;
     const c = parseInt(el.dataset.c, 10);
-    // read the latest value so two coaches tapping the same court don't overwrite each other
-    const { data } = await sb.from('t_courts').select('current_match').eq('tournament_id', id).eq('court', c).maybeSingle();
-    const cur = data?.current_match ?? null;
+    // use what's on screen (refreshed every few seconds) so the tap responds instantly
+    const cur = cache.courts[c] ?? null;
     if (cur == null) {
       toast(`Type the match number on Court ${c} first, then tap Set`);
       app.querySelector(`#cn${c}`)?.focus();
@@ -1022,6 +1032,26 @@ async function parentPage(token) {
   startPoll(rid, render, 10000);
 }
 
+// ---------- tap feedback ----------
+// iOS Safari only shows :active styles when a touchstart listener exists
+document.addEventListener('touchstart', () => {}, { passive: true });
+app.addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('.btn, .chip-btn, .corner-btn, .linkbtn, .weigh, nav.bottom a');
+  if (!b) return;
+  b.classList.remove('tap'); void b.offsetWidth; b.classList.add('tap');
+  b.addEventListener('animationend', () => b.classList.remove('tap'), { once: true });
+}, { passive: true });
+// if a button is still waiting on the server after a moment, show a small spinner on it
+app.addEventListener('click', (e) => {
+  const b = e.target.closest('button.btn, button.weigh');
+  if (!b || b.type === 'submit') return;
+  setTimeout(() => { if (b.isConnected) { b.classList.add('busy'); setTimeout(() => b.classList.remove('busy'), 4000); } }, 350);
+});
+app.addEventListener('submit', (e) => {
+  const b = e.target.querySelector('[type=submit]');
+  if (b) setTimeout(() => { if (b.isConnected && b.disabled) b.classList.add('busy'); }, 350);
+});
+
 // ---------- block double taps on any form button ----------
 app.addEventListener('submit', (e) => {
   const b = e.target.querySelector('[type=submit]');
@@ -1029,7 +1059,7 @@ app.addEventListener('submit', (e) => {
   if (b.dataset.busy) { e.preventDefault(); e.stopImmediatePropagation(); return; }
   b.dataset.busy = '1';
   b.disabled = true;
-  setTimeout(() => { b.disabled = false; delete b.dataset.busy; }, 2500);
+  setTimeout(() => { b.disabled = false; delete b.dataset.busy; b.classList.remove('busy'); }, 2500);
 }, true);
 
 // ---------- boot ----------
