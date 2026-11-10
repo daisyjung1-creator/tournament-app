@@ -432,9 +432,12 @@ async function nextPage(id) {
     const active = rows.filter((r) => r.s.key !== 'done');
     const rank = (r) => (r.s.away == null ? 1000 + r.m.match_no : r.s.away < 0 ? -1 : r.s.away);
     active.sort((x, y) => rank(x) - rank(y) || x.m.court - y.m.court);
-    const soon = active.filter((r) => r.s.away != null && r.s.away <= t.group_alert_at);
-    const later = active.filter((r) => !soon.includes(r));
+    const onMat = active.filter((r) => r.s.key === 'now');
+    const needResult = active.filter((r) => r.s.key === 'past');
+    const soon = active.filter((r) => r.s.away != null && r.s.away >= 1 && r.s.away <= t.group_alert_at);
+    const later = active.filter((r) => !onMat.includes(r) && !needResult.includes(r) && !soon.includes(r));
     const done = rows.filter((r) => r.s.key === 'done');
+    ui.expanded = ui.expanded || new Set();
 
     // same athlete needed on another court soon (e.g. sparring and poomsae overlapping)
     const clashes = (m) => matches
@@ -452,8 +455,12 @@ async function nextPage(id) {
         logLine('Parent', nl.parent),
         logLine('Group', nl.group),
       ].filter(Boolean).join('<br>');
+      const kind = s.key === 'now' ? 'live' : s.key === 'deck' ? 'deck' : s.key === 'past' ? 'needres' : s.key === 'soon1' ? 'hot' : '';
       return `
-      <article class="card ${s.key === 'now' || s.key === 'deck' ? 'hot' : ''}">
+      <article class="card ${kind}">
+        ${s.key === 'now' ? `<div class="live-tag"><span class="pulse" aria-hidden="true"></span>ON THE MAT · COURT ${m.court}</div>` : ''}
+        ${s.key === 'deck' ? `<div class="deck-tag">NEXT UP · COURT ${m.court}</div>` : ''}
+        ${s.key === 'past' ? `<div class="res-tag">Match passed — enter the result</div>` : ''}
         <div class="head">
           <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''}</div></div>
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span>
@@ -475,6 +482,18 @@ async function nextPage(id) {
         </div>
         ${log ? `<div class="log">${log}</div>` : ''}
       </article>`;
+    };
+
+    // waiting: one compact line each; tap to open the full card
+    const row = (r) => {
+      const { m, a, s } = r;
+      if (ui.expanded.has(m.id)) return `<div class="expanded">${card(r)}<button class="linkbtn" data-act="collapse" data-m="${m.id}">Collapse</button></div>`;
+      const sent = Object.keys(m.notify_log?.parent || {}).length + Object.keys(m.notify_log?.group || {}).length;
+      return `
+      <button class="wrow" data-act="expand" data-m="${m.id}" aria-label="${esc(a.name)}, ${esc(evLabel(m))}, court ${m.court} match ${m.match_no}, ${s.label}. Tap for actions">
+        <span class="wname">${esc(a.name)}<small>${esc(evLabel(m))}${m.corner ? ' · ' + (m.corner === 'Blue' ? 'Chung' : 'Hong') : ''}${sent ? ' · messaged' : ''}</small></span>
+        <span class="wwhere">C${m.court} · #${m.match_no}<small>${s.away == null ? 'not started' : s.away + ' away'}</small></span>
+      </button>`;
     };
 
     const needNext = matches.filter((m) => m.result === 'Win' && m.round !== 'Final' && !(ui.skipNext || []).includes(m.id)
@@ -503,12 +522,21 @@ async function nextPage(id) {
     const filters = ['All', 'Sparring', 'Poomsae'];
     const body = `
       ${coachBanner(coachLoad(t, matches, courts), t)}
-      ${needNext.length ? `<div class="sub-h">Next round needed</div><div class="list">${needNext.map(nextForm).join('')}</div>` : ''}
       <div class="chips">${filters.map((f) => `<button class="chip-btn ${ui.filter === f ? 'on' : ''}" data-act="filter" data-f="${f}">${f}</button>`).join('')}</div>
       ${!matches.length ? `<div class="empty">No matches yet. Add athletes and match numbers in <a href="#/t/${id}/setup">Setup</a>.</div>` : ''}
-      ${soon.length ? `<div class="sub-h">Up next (within ${t.group_alert_at})</div><div class="list">${soon.map(card).join('')}</div>` : ''}
-      ${later.length ? `<div class="sub-h">Later</div><div class="list">${later.map(card).join('')}</div>` : ''}
-      ${done.length ? `<details class="pad"><summary>Finished (${done.length})</summary><div class="list" style="padding:8px 0">${done.map(card).join('')}</div></details>` : ''}`;
+      ${matches.length ? `
+      <div class="counts" role="group" aria-label="Jump to section">
+        <button class="cnt live" data-act="jump" data-to="sec-now" ${onMat.length ? '' : 'disabled'}><strong>${onMat.length}</strong>On mat</button>
+        <button class="cnt next" data-act="jump" data-to="sec-next" ${soon.length ? '' : 'disabled'}><strong>${soon.length}</strong>Up next</button>
+        <button class="cnt" data-act="jump" data-to="sec-wait" ${later.length ? '' : 'disabled'}><strong>${later.length}</strong>Waiting</button>
+        <button class="cnt" data-act="jump" data-to="sec-done" ${done.length ? '' : 'disabled'}><strong>${done.length}</strong>Done</button>
+      </div>` : ''}
+      ${onMat.length ? `<h2 class="sec live" id="sec-now"><span class="pulse" aria-hidden="true"></span>On the mat now<span class="n">${onMat.length}</span></h2><div class="list">${onMat.map(card).join('')}</div>` : ''}
+      ${needResult.length ? `<h2 class="sec warn">Needs a result<span class="n">${needResult.length}</span></h2><div class="list">${needResult.map(card).join('')}</div>` : ''}
+      ${needNext.length ? `<h2 class="sec next">Next round needed<span class="n">${needNext.length}</span></h2><div class="list">${needNext.map(nextForm).join('')}</div>` : ''}
+      ${soon.length ? `<h2 class="sec next" id="sec-next">Up next<span class="n">${soon.length}</span><small>within ${t.group_alert_at} matches</small></h2><div class="list">${soon.map(card).join('')}</div>` : ''}
+      ${later.length ? `<h2 class="sec" id="sec-wait">Waiting<span class="n">${later.length}</span><small>tap a name for actions</small></h2><div class="list tight">${later.map(row).join('')}</div>` : ''}
+      ${done.length ? `<details class="pad" id="sec-done"><summary>Finished (${done.length})</summary><div class="list" style="padding:8px 0">${done.map(card).join('')}</div></details>` : ''}`;
     // keep the "Finished" panel open across refreshes
     const wasOpen = app.querySelector('details')?.open;
     const y = window.scrollY;
@@ -522,6 +550,13 @@ async function nextPage(id) {
     if (!el || !cache.t) return;
     const act = el.dataset.act;
     if (act === 'filter') { ui.filter = el.dataset.f; return render(true); }
+    if (act === 'expand') { ui.expanded.add(el.dataset.m); return render(true); }
+    if (act === 'collapse') { ui.expanded.delete(el.dataset.m); return render(true); }
+    if (act === 'jump') {
+      const target = document.getElementById(el.dataset.to);
+      if (target) { if (target.tagName === 'DETAILS') target.open = true; window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - document.querySelector('header.top').offsetHeight - 8, behavior: 'smooth' }); }
+      return;
+    }
     if (act === 'group' || act === 'parent') {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
       const a = cache.byId[m.athlete_id];
@@ -623,12 +658,14 @@ async function courtsPage(id) {
         .sort((x, y) => x.match_no - y.match_no);
       const nxt = upcoming[0];
       const near = nxt && cur != null && nxt.match_no - cur <= t.group_alert_at;
+      const live = nxt && cur != null && nxt.match_no === cur;
       const nextTxt = nxt
         ? `${esc(shortName(byId[nxt.athlete_id]?.name))} at #${nxt.match_no}${cur != null ? ` (${nxt.match_no < cur ? 'add result' : nxt.match_no - cur === 0 ? 'on the mat' : nxt.match_no - cur === 1 ? 'on deck' : (nxt.match_no - cur) + ' away'})` : ''}`
         : 'No athletes queued';
       cells.push(`
-        <section class="court ${near ? 'ours' : ''}">
-          <div class="rowx" style="justify-content:space-between"><strong>Court ${c}</strong>${near ? '<span class="dot" role="img" aria-label="Our athlete is close"></span>' : ''}</div>
+        <section class="court ${live ? 'live' : near ? 'ours' : ''}">
+          <div class="rowx" style="justify-content:space-between"><strong>Court ${c}</strong>${live ? '<span class="live-mini"><span class="pulse" aria-hidden="true"></span>LIVE</span>' : near ? '<span class="dot" role="img" aria-label="Our athlete is close"></span>' : ''}</div>
+          ${live ? `<div class="live-name">${esc(shortName(byId[nxt.athlete_id]?.name))} on the mat</div>` : ''}
           <form data-court="${c}" style="display:flex;flex-direction:column;gap:4px">
             <label for="cn${c}" class="eyebrow" style="font-size:11px">Now on mat</label>
             <div class="rowx" style="gap:6px">
