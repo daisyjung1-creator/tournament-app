@@ -291,7 +291,7 @@ function loginPage() {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) return toast('Wrong password');
     const ok = await sb.rpc('is_tourney_staff');
-    if (!ok.data) { await sb.auth.signOut(); return toast('This account has no tournament access'); }
+    if (!ok.data) { await sb.auth.signOut({ scope: 'local' }); return toast('This account has no tournament access'); }
   };
 }
 
@@ -349,7 +349,7 @@ async function homePage() {
       toast('Coach password changed');
     };
   });
-  app.querySelector('[data-act=logout]').onclick = () => sb.auth.signOut();
+  app.querySelector('[data-act=logout]').onclick = () => sb.auth.signOut({ scope: 'local' });
   app.onchange = null; app.onsubmit = null;
   app.onclick = async (e) => {
     const el = e.target.closest('[data-act=delt]');
