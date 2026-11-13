@@ -816,7 +816,7 @@ async function poomsaePage(id) {
     const card = (l) => {
       const ours = l.entries.filter((e) => e.athlete_id);
       const now = l.now_position;
-      const expanded = open === l.id || lineups.length === 1;
+      const expanded = open === l.id; // other clubs' athletes only when asked for
       return `
       <section class="card lineup ${ours.some((e) => now && e.position - now >= 0 && e.position - now <= 3) ? 'hot' : ''}">
         <div class="head">
@@ -828,8 +828,8 @@ async function poomsaePage(id) {
         <div class="rowx">
           <button class="btn ghost icon" data-act="lprev" data-l="${l.id}" aria-label="Previous performer" ${now ? '' : 'disabled'}>${UI.minus}</button>
           <button class="btn dark" style="flex:1" data-act="lnext" data-l="${l.id}">${UI.plus}${now ? 'Next performer' : 'Start (1st up)'}</button>
-          ${lineups.length > 1 ? `<button class="btn ghost" data-act="ltoggle" data-l="${l.id}">${expanded ? 'Hide' : 'Show all'}</button>` : ''}
         </div>
+        <button class="btn ghost block" data-act="ltoggle" data-l="${l.id}" aria-expanded="${expanded}">${UI.order}${expanded ? 'Hide full order' : `Show full order (${l.entries.length})`}</button>
         ${expanded ? `
         <ol class="lineup-list">
           ${l.entries.map((e) => `
@@ -849,7 +849,7 @@ async function poomsaePage(id) {
       </section>`;
     };
     const body = `
-      <p class="pad small muted" style="margin:0;padding-bottom:0">Full performing order for each poomsae division. Our athletes are highlighted. Tap a name (or <strong>Next performer</strong>) to mark who is performing now.</p>
+      <p class="pad small muted" style="margin:0;padding-bottom:0">Our athletes' place in each poomsae division. Tap <strong>Next performer</strong> as each athlete finishes. <strong>Show full order</strong> lists everyone.</p>
       <div class="list">${lineups.length ? lineups.map(card).join('') : '<div class="empty">No poomsae order yet. Add one below, or send Claude a photo of the order sheet.</div>'}</div>
       <div class="section">${ui.editLineup === 'new' ? lineupForm(t, null) : `<button class="btn block" data-act="lnew">${UI.plus}Add a poomsae division</button>`}</div>`;
     paint(t, 'poomsae', body);
@@ -900,7 +900,7 @@ async function poomsaePage(id) {
       return { tournament_id: id, lineup_id: lid, position: i + 1, name: me ? me.name : r.name, club: r.club || null, athlete_id: me ? me.id : null };
     })));
     const linked = rows.filter((r) => ours[normName(r.name)]).length;
-    ui.editLineup = null; ui.openLineup = lid;
+    ui.editLineup = null; ui.openLineup = null;
     toast(`Saved ${rows.length} athletes${linked ? ` · ${linked} ours` : ''}`);
     render();
   };
