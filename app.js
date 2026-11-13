@@ -240,6 +240,7 @@ function dayBeforeMessage(t, a, ms) {
     '',
     t.venue ? `📍 ${t.venue}` : '',
     t.arrival ? `⏰ Please arrive by ${t.arrival}` : '',
+    t.weighin_time && isBlackBelt(a) ? `⚖️ Black belt weigh-in at ${t.weighin_time} — please be on time` : '',
     '',
     ms.length ? `${child}'s matches:\n${ms.sort((x, y) => x.match_no - y.match_no).map(matchLine).join('\n')}` : `${child}'s match numbers will be shared as soon as we have them.`,
     '',
@@ -261,6 +262,7 @@ function groupScheduleMessage(t, athletes, matches) {
     `📣 ${t.name}${t.event_date ? ` — ${fmtDate(t.event_date)}` : ''}`,
     t.venue ? `📍 ${t.venue}` : '',
     t.arrival ? `⏰ Please arrive by ${t.arrival}` : '',
+    t.weighin_time ? `⚖️ Black belt weigh-in at ${t.weighin_time}` : '',
     '',
     'Our athletes:',
     ...rows,
@@ -902,6 +904,7 @@ async function setupPage(id) {
             <div class="field"><label for="sk">Coaches today</label><input id="sk" type="number" min="1" max="12" value="${t.coaches}" inputmode="numeric"></div>
             <div class="field"><label for="sa">Arrive by</label><input id="sa" value="${esc(t.arrival || '')}" placeholder="e.g. 8:00 AM"></div>
           </div>
+          <div class="field"><label for="sw">Black belt weigh-in time</label><input id="sw" value="${esc(t.weighin_time || '')}" placeholder="e.g. 7:45 AM (leave empty if none)"></div>
           <div class="field"><label for="sv">Venue / address</label><input id="sv" value="${esc(t.venue || '')}" placeholder="e.g. Repsol Sport Centre, 2225 Macleod Trail SE"></div>
           <div class="field"><label for="so">Message sign-off</label><input id="so" value="${esc(t.signoff)}"></div>
           <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save settings</button>
@@ -997,6 +1000,7 @@ async function setupPage(id) {
         coaches: Math.min(12, Math.max(1, parseInt(app.querySelector('#sk').value, 10) || 3)),
         arrival: app.querySelector('#sa').value.trim() || null,
         venue: app.querySelector('#sv').value.trim() || null,
+        weighin_time: app.querySelector('#sw').value.trim() || null,
       }).eq('id', id));
       toast('Settings saved'); render();
     };
