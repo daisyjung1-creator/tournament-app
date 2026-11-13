@@ -278,7 +278,6 @@ const GUIDE = [
     'All athletes, including black belts, should attend the team gathering for the team warm-up and the information Master Daisy shares after the coaches’ meeting.',
   ]],
   ['Match numbers & rings', [
-    'Sparring match numbers do not start at #1 — numbering continues through the whole event.',
     'Always check BOTH your child’s match number and ring, especially while warming up away from the competition area.',
     '⚠️ An athlete who does not report when called is disqualified. There are no exhibition matches.',
   ]],
@@ -286,11 +285,14 @@ const GUIDE = [
     'Hogu (chest protector) and headgear colours must match the assigned corner (red or blue). Black or white headgear works for either.',
     'If the headgear colour doesn’t match, tell Master Daisy or an instructor.',
     'Long hair must be tied securely and fit inside the hogu or headgear.',
-    'Bring a mouthguard and water bottle; protective gear goes on under the uniform.',
+    'All protective gear is worn UNDER the dobok.',
+    'Bring a mouthguard and a water bottle.',
   ]],
   ['Weigh-in', [
+    'Make weight at home before the tournament. Cutting weight at the venue is not allowed.',
     'Be at weigh-in on time.',
-    'An athlete who does not make weight after the allowed attempts and allowance is disqualified — no exhibition match.',
+    'At the tournament, an athlete who does not make weight is disqualified.',
+    'Team Hankook rule: missing weight also affects your child’s next tournament.',
   ]],
   ['Uniform', [
     'Venues often have no change rooms. Please arrive already dressed in your dobok.',
@@ -302,10 +304,6 @@ const GUIDE = [
   ]],
   ['Food', [
     'Bring water, snacks and lunch — athletes are often at the venue most of the day.',
-  ]],
-  ['Coaching fee', [
-    'Coaching fees are charged once the organizers confirm the final athlete list, and are non-refundable.',
-    'Not on pre-authorized payment? Please e-transfer to hankooktkd@gmail.com.',
   ]],
 ];
 const guideHTML = () => `
