@@ -309,3 +309,15 @@ textarea { width: 100%; border: 1px solid #D4D4D4; border-radius: 10px; padding:
 .sheet .btn.icon { height: 52px; width: 52px; }
 .sheet-preview summary { min-height: 32px; display: flex; align-items: center; color: var(--muted); }
 .sheet-preview .preview { max-height: 30vh; overflow-y: auto; }
+
+/* team guide on the parent page */
+.guide { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 12px 14px; }
+.guide summary { cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; min-height: 44px; justify-content: center; list-style: none; }
+.guide summary::-webkit-details-marker { display: none; }
+.guide summary span { font-weight: 800; font-size: 15px; }
+.guide summary span::after { content: ' ›'; color: var(--muted); }
+.guide[open] summary span::after { content: ' ⌄'; }
+.guide summary small { color: var(--muted); font-size: 12px; }
+.guide h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 4px; color: var(--accent-ink); }
+.guide ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.guide li + li { margin-top: 4px; }

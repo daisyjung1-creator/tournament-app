@@ -267,6 +267,54 @@ function parentMessage(m, a, t, s) {
 
 const matchLine = (m) => `• ${evLabel(m)} — Court ${m.court}, Match #${m.match_no}${m.corner ? ` (${m.corner === 'Blue' ? '🟦 Blue/Chung' : '🟥 Red/Hong'})` : ''}`;
 
+// Team Hankook rules that apply at every tournament (tournament-specific details live in the settings)
+const GUIDE = [
+  ['Tournament day communication', [
+    'We use the Team Hankook WhatsApp group all day for updates, ring assignments and schedule changes.',
+    'Please check the group chat regularly so you don’t miss an announcement.',
+  ]],
+  ['Arrival & team gathering', [
+    'Please arrive on time.',
+    'All athletes, including black belts, should attend the team gathering for the team warm-up and the information Master Daisy shares after the coaches’ meeting.',
+  ]],
+  ['Match numbers & rings', [
+    'Sparring match numbers do not start at #1 — numbering continues through the whole event.',
+    'Always check BOTH your child’s match number and ring, especially while warming up away from the competition area.',
+    '⚠️ An athlete who does not report when called is disqualified. There are no exhibition matches.',
+  ]],
+  ['Sparring gear', [
+    'Hogu (chest protector) and headgear colours must match the assigned corner (red or blue). Black or white headgear works for either.',
+    'If the headgear colour doesn’t match, tell Master Daisy or an instructor.',
+    'Long hair must be tied securely and fit inside the hogu or headgear.',
+    'Bring a mouthguard and water bottle; protective gear goes on under the uniform.',
+  ]],
+  ['Weigh-in', [
+    'Be at weigh-in on time.',
+    'An athlete who does not make weight after the allowed attempts and allowance is disqualified — no exhibition match.',
+  ]],
+  ['Uniform', [
+    'Venues often have no change rooms. Please arrive already dressed in your dobok.',
+  ]],
+  ['Conduct', [
+    'Follow all instructions from judges, referees and volunteers.',
+    'Stay in the spectator areas; do not enter athlete or official areas.',
+    'Questions or concerns about a match or result go to Master Daisy or an instructor first — please do not approach the organizers directly.',
+  ]],
+  ['Food', [
+    'Bring water, snacks and lunch — athletes are often at the venue most of the day.',
+  ]],
+  ['Coaching fee', [
+    'Coaching fees are charged once the organizers confirm the final athlete list, and are non-refundable.',
+    'Not on pre-authorized payment? Please e-transfer to hankooktkd@gmail.com.',
+  ]],
+];
+const guideHTML = () => `
+  <details class="guide" ${ui.guideOpen ? 'open' : ''}>
+    <summary><span>📋 Team Hankook tournament guide</span><small>Please read before the tournament</small></summary>
+    ${GUIDE.map(([h, items]) => `<h3>${esc(h)}</h3><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')}
+    <p class="small muted" style="margin:12px 0 0">Questions? Talk to Master Daisy or any Team Hankook instructor.</p>
+  </details>`;
+
 function dayBeforeMessage(t, a, ms) {
   const child = first(a.name);
   const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
@@ -281,7 +329,10 @@ function dayBeforeMessage(t, a, ms) {
     '',
     `Please bring:\n${GEAR}`,
     '',
-    `We'll message you as ${child}'s turn gets close. Live status: ${parentLink(a.token)}`,
+    `📋 Please read the Team Hankook tournament guide (rules & reminders) on ${child}'s live page:`,
+    `${parentLink(a.token)}`,
+    '',
+    `We'll message you as ${child}'s turn gets close.`,
     `– ${t.signoff}`,
   ];
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
@@ -1494,6 +1545,7 @@ async function parentPage(token) {
         <div class="gear"><strong>Gear check</strong>
           <ul><li>Protective gear on under the uniform</li><li>Mouthguard</li><li>Water bottle</li></ul></div>
       </section>` : `<div class="hero"><span style="font-size:16px;font-weight:700">All done for today. Great job, ${esc(childFirst)}!</span></div>`}
+      <div class="pad" style="padding-bottom:0">${guideHTML()}</div>
       <div class="pad">
         <h2>Today</h2>
         ${ms.map((m) => `
@@ -1530,6 +1582,11 @@ async function parentPage(token) {
       </div>` : ''}
       <p class="small muted" style="text-align:center;padding:0 20px 24px">Updated by your coaches · refreshes automatically<br>– ${esc(data.signoff)}</p>`);
   };
+  // remember whether the guide is open so the 10-second refresh doesn't close it
+  if (!app.dataset.guideHook) {
+    app.dataset.guideHook = '1';
+    app.addEventListener('toggle', (e) => { if (e.target.matches?.('details.guide')) { ui.guideOpen = e.target.open; delete app.dataset.page; } }, true);
+  }
   app.onclick = (e) => {
     const b = e.target.closest('[data-pb]');
     if (!b) return;
