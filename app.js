@@ -337,24 +337,40 @@ const guideHTML = () => `
     <p class="small muted" style="margin:12px 0 0">Questions? Talk to Master Daisy or any Team Hankook instructor.</p>
   </details>`;
 
-function dayBeforeMessage(t, a, ms) {
-  const child = first(a.name);
+// siblings = same parent name in this tournament (matches the parent page grouping)
+const familyKey = (a) => (a.guardian_name || '').trim().toLowerCase();
+const siblingsOf = (a, athletes) => (familyKey(a) ? athletes.filter((x) => x.id === a.id || familyKey(x) === familyKey(a)) : [a])
+  .sort((x, y) => (y.id === a.id) - (x.id === a.id) || x.name.localeCompare(y.name));
+const andList = (xs) => (xs.length < 3 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+// kids: [{ a, ms }] — one child, or brothers & sisters sent together in one message
+function dayBeforeMessage(t, kids) {
+  const a = kids[0].a;
+  const names = kids.map((k) => first(k.a.name));
+  const child = andList(names);
+  const many = kids.length > 1;
+  const bb = kids.filter((k) => isBlackBelt(k.a)).map((k) => first(k.a.name));
   const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
+  const matchBlock = ({ a: k, ms }) => (ms.length
+    ? `${first(k.name)}'s matches:\n${[...ms].sort((x, y) => x.match_no - y.match_no).map(matchLine).join('\n')}`
+    : `${first(k.name)}'s match numbers will be shared as soon as we have them.`);
   const lines = [
     `${hi} Here are ${child}'s details for ${t.name}${t.event_date ? ` (${fmtDate(t.event_date)})` : ''}:`,
     '',
     t.venue ? `📍 ${t.venue}` : '',
     t.arrival ? `⏰ Please arrive by ${t.arrival}` : '',
-    t.weighin_time && isBlackBelt(a) ? `⚖️ Black belt weigh-in at ${t.weighin_time} — please be on time` : '',
+    t.weighin_time && bb.length ? `⚖️ Black belt weigh-in at ${t.weighin_time}${many ? ` (${andList(bb)})` : ''} — please be on time` : '',
     '',
-    ms.length ? `${child}'s matches:\n${ms.sort((x, y) => x.match_no - y.match_no).map(matchLine).join('\n')}` : `${child}'s match numbers will be shared as soon as we have them.`,
+    kids.map(matchBlock).join('\n\n'),
     '',
     `Please bring:\n${GEAR}`,
     '',
-    `📋 Please read the Team Hankook tournament guide (rules & reminders) on ${child}'s live page:`,
+    many
+      ? `📋 Please read the Team Hankook tournament guide (rules & reminders) on your live page — it shows ${child}:`
+      : `📋 Please read the Team Hankook tournament guide (rules & reminders) on ${child}'s live page:`,
     `${parentLink(a.token)}`,
     '',
-    `We'll message you as ${child}'s turn gets close.`,
+    many ? `We'll message you as each of their turns gets close.` : `We'll message you as ${child}'s turn gets close.`,
     `– ${t.signoff}`,
   ];
   return lines.join('\n').replace(/\n{3,}/g, '\n\n');
@@ -1357,7 +1373,7 @@ async function setupPage(id) {
         <h2>Day-before info</h2>
         <div class="small muted">Sends each family the venue, arrival time, their child's matches, gear list and live link.${!t.venue || !t.arrival ? ' <strong style="color:var(--red-ink)">Add venue and arrival time in Tournament settings first.</strong>' : ''}</div>
         <button class="btn ${t.group_schedule_sent_at ? 'ghost' : 'dark'} block" data-act="groupsched">${t.group_schedule_sent_at ? UI.check + 'Schedule posted ' + ago(t.group_schedule_sent_at) + ' · post again' : UI.users + 'Post full schedule to group'}</button>
-        <div class="small muted">${athletes.filter((x) => x.dayinfo_sent_at).length} of ${athletes.length} families messaged individually (button on each athlete below).</div>
+        ${(() => { const fams = [...new Map(athletes.map((x) => [familyKey(x) || x.id, siblingsOf(x, athletes)])).values()]; return `<div class="small muted">${fams.filter((f) => f.every((x) => x.dayinfo_sent_at)).length} of ${fams.length} families messaged individually (button on each athlete below). Brothers &amp; sisters with the same parent name get one message and share one live page.</div>`; })()}
       </div>` : ''}
 
       <div class="section stack">
@@ -1368,7 +1384,7 @@ async function setupPage(id) {
           <div class="ath">
             <div class="rowx" style="justify-content:space-between;align-items:flex-start">
               <div><div class="t" style="font-weight:700">${esc(a.name)}${a.belt ? ` <span class="small muted" style="font-weight:400">· ${esc(a.belt)}</span>` : ''}</div>
-                <div class="small muted">${esc(a.guardian_name || 'No parent name')} · ${a.channel === 'sms' ? 'Text' : 'WhatsApp'}</div>
+                <div class="small muted">${esc(a.guardian_name || 'No parent name')} · ${a.channel === 'sms' ? 'Text' : 'WhatsApp'}${(() => { const s = siblingsOf(a, athletes).filter((x) => x.id !== a.id); return s.length ? ` · 👪 with ${esc(andList(s.map((x) => first(x.name))))}` : ''; })()}</div>
                 <div class="phones">${(() => { const ph = parsePhones(a.phone); return ph.length ? ph.map((p) => `<span class="phone-chip">${p.label ? esc(p.label) + ' · ' : ''}${p.display}</span>`).join('') : `<span class="small" style="color:var(--red-ink)">${a.phone ? 'Phone not recognised: ' + esc(a.phone) : 'No phone'}</span>`; })()}</div></div>
               <button class="linkbtn" data-act="edita" data-a="${a.id}">${ICON.edit}Edit</button>
             </div>
@@ -1488,10 +1504,10 @@ async function setupPage(id) {
       return render();
     }
     if (act === 'dayinfo') {
-      const ms = cache.matches.filter((m) => m.athlete_id === a.id);
-      const text = dayBeforeMessage(cache.t, a, ms);
-      const mark = () => sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).eq('id', a.id).then(() => render());
-      return pickNumber(a, `Send day-before info to ${first(a.name)}'s parent`, (num) => { openMessage(a.channel, num.num, text); mark(); }, { text, onCopy: mark });
+      const sibs = siblingsOf(a, cache.athletes);
+      const text = dayBeforeMessage(cache.t, sibs.map((s) => ({ a: s, ms: cache.matches.filter((m) => m.athlete_id === s.id) })));
+      const mark = () => sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).in('id', sibs.map((s) => s.id)).then(() => render());
+      return pickNumber(a, `Send day-before info to ${andList(sibs.map((s) => first(s.name)))}'s parent`, (num) => { openMessage(a.channel, num.num, text); mark(); }, { text, onCopy: mark });
     }
     if (act === 'groupsched') {
       const text = groupScheduleMessage(cache.t, cache.athletes, cache.matches);
@@ -1518,21 +1534,33 @@ async function parentPage(token) {
   app.onclick = null; app.onchange = null; app.onsubmit = null;
   const render = async () => {
     let res;
-    try { res = await sb.rpc('t_parent_view', { p_token: token }); } catch (err) { setNet(false); return; }
-    const { data, error } = res;
+    try { res = await sb.rpc('t_family_view', { p_token: token }); } catch (err) { setNet(false); return; }
+    const { data: fam, error } = res;
     if (error && isNetErr(error)) { setNet(false); return; }
     setNet(true);
+    // brothers & sisters (same parent name, same tournament) share one page; the linked child shows first
+    const kids = Array.isArray(fam) ? fam.filter(Boolean) : [];
+    const data = kids.find((k) => k.me === ui.kid) || kids[0];
     if (error || !data) {
       app.innerHTML = `<div class="empty">This link isn't active. Please check with your coach.</div>`;
       stopPoll(); return;
     }
     guidePopup(token);
-    const ms = data.matches.map((m) => {
+    const withStatus = (k) => k.matches.map((m) => {
       const s = statusOf(m, { [m.court]: m.current });
       if (s.key === 'past') s.label = 'FINISHING';
       return { ...m, s };
     });
-    const nxt = ms.filter((m) => m.s.key !== 'done').sort((x, y) => (x.s.away ?? 999) - (y.s.away ?? 999) || x.match_no - y.match_no)[0];
+    const nextOf = (list) => list.filter((m) => m.s.key !== 'done').sort((x, y) => (x.s.away ?? 999) - (y.s.away ?? 999) || x.match_no - y.match_no)[0];
+    const ms = withStatus(data);
+    const nxt = nextOf(ms);
+    const tabs = kids.length > 1 ? `<nav class="kid-tabs" aria-label="Your athletes">${kids.map((k) => {
+      const n = nextOf(withStatus(k));
+      const hot = n && (n.s.key === 'now' || n.s.key === 'deck' || (n.s.away != null && n.s.away <= CHECKIN_AT));
+      const sub = !k.matches.length ? 'No matches yet' : n ? `C${n.court} · #${n.match_no}` : 'All done';
+      return `<button class="kid-tab${k.me === data.me ? ' on' : ''}" data-kid="${k.me}" aria-pressed="${k.me === data.me}">
+        <span>${hot ? '<i class="hot" aria-label="soon"></i>' : ''}${esc(first(k.athlete))}</span><small>${esc(sub)}</small></button>`;
+    }).join('')}</nav>` : '';
     const childFirst = first(data.athlete);
     let msg = '';
     if (nxt) {
@@ -1550,6 +1578,7 @@ async function parentPage(token) {
         <div><span class="eyebrow">${esc(data.tournament)} · Live</span>
         <h1 style="color:#fff">${esc(data.athlete)}</h1></div>
       </header>
+      ${tabs}
       ${nxt ? `
       <section class="hero" aria-live="polite">
         <div class="rowx" style="justify-content:space-between">
@@ -1611,6 +1640,8 @@ async function parentPage(token) {
     app.addEventListener('toggle', (e) => { if (e.target.matches?.('details.guide')) { ui.guideOpen = e.target.open; delete app.dataset.page; } }, true);
   }
   app.onclick = (e) => {
+    const k = e.target.closest('[data-kid]');
+    if (k) { ui.kid = k.dataset.kid; ui.openPB = null; delete app.dataset.page; window.scrollTo(0, 0); return render(); }
     const b = e.target.closest('[data-pb]');
     if (!b) return;
     ui.openPB = ui.openPB === b.dataset.pb ? null : b.dataset.pb;
