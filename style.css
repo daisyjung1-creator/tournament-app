@@ -267,3 +267,37 @@ textarea { width: 100%; border: 1px solid #D4D4D4; border-radius: 10px; padding:
 .order-note { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; background: var(--soft); border-radius: 10px; padding: 8px 10px; }
 .order-note .i { width: 16px; height: 16px; flex: none; }
 .card.live .order-note { background: #222; color: #fff; }
+
+/* ===== bracket tree ===== */
+.tree-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -14px; padding: 4px 14px 10px; }
+.tree { display: flex; align-items: stretch; min-width: max-content; }
+.round { display: flex; flex-direction: column; width: 150px; flex: none; }
+.round.champ { width: 120px; }
+.rname { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); text-align: center; height: 22px; }
+.rmatches { flex: 1; display: flex; flex-direction: column; }
+.mwrap { flex: 1; display: flex; align-items: center; position: relative; padding: 6px 14px; }
+.round.first .mwrap { padding-left: 0; }
+/* connector lines */
+.mwrap::after { content: ''; position: absolute; right: 0; width: 14px; border-right: 2px solid #CFCFCF; }
+.mwrap:nth-child(odd)::after { top: 50%; height: 50%; border-top: 2px solid #CFCFCF; }
+.mwrap:nth-child(even)::after { top: 0; height: 50%; border-bottom: 2px solid #CFCFCF; }
+.round:not(.first) .mwrap::before { content: ''; position: absolute; left: 0; top: 50%; width: 14px; border-top: 2px solid #CFCFCF; }
+.round.champ .mwrap::after { display: none; }
+.round.last .mwrap::after { height: 0; border-right: 0; top: 50%; border-top: 2px solid #CFCFCF; border-bottom: 0; }
+.mbox { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; position: relative; }
+.mbox.has-ours { border: 2px solid var(--accent); }
+.mbox.byematch { opacity: .55; }
+.mno { position: absolute; right: 6px; top: 3px; font-size: 10px; font-weight: 700; color: var(--muted); }
+.bslot { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 40px; padding: 4px 8px; border: 0; background: transparent; font: inherit; text-align: left; color: var(--ink); cursor: pointer; }
+.bslot + .bslot { border-top: 1px solid var(--line); }
+.bslot:disabled { cursor: default; color: var(--ink); }
+.bslot .bn { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 112px; }
+.bslot .bc { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 112px; }
+.bslot.ours { background: #FFF1E6; }
+.bslot.ours .bn { color: var(--accent-ink); font-weight: 800; }
+.bslot.won .bn { font-weight: 800; }
+.bslot.won::before { content: '✓ '; }
+.bslot.won { flex-direction: row; align-items: center; gap: 2px; flex-wrap: wrap; }
+.bslot.lost { opacity: .4; }
+.bslot.tbd, .bslot.bye { color: var(--muted); font-size: 12px; cursor: default; }
+.order-note span { min-width: 0; }

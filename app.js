@@ -436,7 +436,7 @@ async function loadT(id) {
 }
 
 function shell(t, tab, body) {
-  const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['poomsae', 'Poomsae', UI.order], ['results', 'Results', UI.trophy], ['setup', 'Setup', ICON.edit]];
+  const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['poomsae', 'Brackets', UI.order], ['results', 'Results', UI.trophy], ['setup', 'Setup', ICON.edit]];
   return `
     <header class="top">
       <div class="row"><img class="logo" src="logo.png" alt="High Performance Hankook"><span class="eyebrow">${esc(t.event_date || '')}</span></div>
@@ -516,7 +516,7 @@ async function nextPage(id) {
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span>
             ${s.key === 'done' ? cornerChip(m.corner) : `<br><button class="corner-btn ${m.corner ? m.corner.toLowerCase() : ''}" data-act="corner" data-m="${m.id}" aria-label="Corner: ${m.corner || 'not set'}. Tap to change">${m.corner ? (m.corner === 'Blue' ? 'Chung · Blue' : 'Hong · Red') : 'Set corner'}</button>`}</div>
         </div>
-        ${(() => { if (m.event !== 'Poomsae' || s.key === 'done') return ''; const sp = lineupSpot(cache.lineups, a.id); return sp ? `<div class="order-note">${UI.order}${esc(sp.l.name)}: performs ${spotText(sp)}</div>` : ''; })()}
+        ${(() => { if (s.key === 'done') return ''; const n = divisionNote(cache.lineups, matches, a.id, m.event); return n ? `<div class="order-note">${UI.order}<span>${n}</span></div>` : ''; })()}
         ${m.event === 'Sparring' && s.key !== 'done' && needsWeighIn(a, matches) ? `<button class="weigh need" data-act="weigh" data-a="${a.id}">⚖ Weigh-in not done — tap when passed</button>` : ''}
         ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(evLabel(o))} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${['done', 'now', 'past'].includes(s.key) ? '' : `
@@ -784,79 +784,190 @@ async function courtsPage(id) {
   startPoll(rid, () => (document.activeElement?.matches('input') ? Promise.resolve() : render()), POLL_MS);
 }
 
-// ---------- Poomsae order ----------
-// "Mia: 5th of 12 · 3 ahead" for an athlete, if they are in a lineup
-function lineupSpot(lineups, athleteId) {
-  for (const l of lineups || []) {
-    const e = l.entries.find((x) => x.athlete_id === athleteId);
-    if (!e) continue;
-    const ahead = l.now_position ? e.position - l.now_position : null;
-    return { l, e, ahead, total: l.entries.length };
-  }
-  return null;
-}
-const spotText = (sp) => `${ordinal(sp.e.position)} of ${sp.total}${sp.ahead == null ? '' : sp.ahead > 0 ? ` · ${sp.ahead} ahead` : sp.ahead === 0 ? ' · performing now' : ' · done'}`;
+// ---------- Brackets (tree) and poomsae order ----------
 const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+const WIN = ['Win', 'Gold'], LOSE = ['Loss', 'Silver', 'Bronze'];
+const roundName = (r, rounds) => ({ 1: 'Final', 2: 'Semifinal', 3: 'Quarterfinal', 4: 'Round of 16', 5: 'Round of 32', 6: 'Round of 64' }[rounds - r] || `Round ${r + 1}`);
+const shortRound = (n) => ({ Final: 'Final', Semifinal: 'Semi', Quarterfinal: 'QF', 'Round of 16': 'R16', 'Round of 32': 'R32', 'Round of 64': 'R64' }[n] || n);
 
-// "Mia Lee, Champion Hankook" / "Mia Lee - Hankook" / "1. Mia Lee (Hankook)" -> { name, club }
-function parseLineup(text) {
-  return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => {
+// "1. Mia Lee (Hankook)" / "Mia Lee, Hankook" / "BYE" -> { name, club } or { bye: true }
+function parseLines(text) {
+  return String(text || '').split(/\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
     line = line.replace(/^\s*\d+\s*[.)\-:]?\s+/, '');
-    let m = line.match(/^(.*?)\s*\((.+)\)\s*$/) || line.match(/^(.*?)\s*(?:,|\s-\s|\t|\s\|\s)\s*(.+)$/);
+    if (/^(bye|-+|—)$/i.test(line)) return { bye: true };
+    const m = line.match(/^(.*?)\s*\((.+)\)\s*$/) || line.match(/^(.*?)\s*(?:,|\s-\s|\t|\s\|\s)\s*(.+)$/);
     return m ? { name: m[1].trim(), club: m[2].trim() } : { name: line, club: '' };
   });
 }
-const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+
+// Work out the whole tree: who is in each box, who won (stored taps + our athletes' results)
+function buildBracket(l, matches) {
+  const maxPos = Math.max(2, ...l.entries.map((e) => e.position));
+  const size = 2 ** Math.ceil(Math.log2(maxPos));
+  const rounds = Math.log2(size);
+  const bySlot = Object.fromEntries(l.entries.map((e) => [e.position, e]));
+  const BYE = { bye: true };
+  // our athletes: how far their results say they got in this event
+  const prog = {};
+  l.entries.filter((e) => e.athlete_id).forEach((e) => {
+    const ms = matches.filter((m) => m.athlete_id === e.athlete_id && m.event === l.event && m.result);
+    prog[e.position] = { wins: ms.filter((m) => WIN.includes(m.result)).length, lost: ms.some((m) => LOSE.includes(m.result)) };
+  });
+  let occ = Array.from({ length: size }, (_, i) => bySlot[i + 1] || BYE);
+  const out = [];
+  let k = 0;
+  for (let r = 0; r < rounds; r++) {
+    const ms = [], next = [];
+    for (let m = 0; m < occ.length / 2; m++) {
+      const A = occ[2 * m], B = occ[2 * m + 1];
+      const key = `${r}-${m}`;
+      let w = null;
+      const stored = l.winners?.[key];
+      if (stored && (A?.position === stored || B?.position === stored)) w = A?.position === stored ? A : B;
+      else if (A?.bye && B?.bye) w = BYE;
+      else if (A && !A.bye && B?.bye) w = A;
+      else if (B && !B.bye && A?.bye) w = B;
+      else {
+        for (const [me, op] of [[A, B], [B, A]]) {
+          const p = me && !me.bye && prog[me.position];
+          if (!p) continue;
+          if (r < p.wins) w = me;
+          else if (r === p.wins && p.lost && op && !op.bye) w = op;
+        }
+      }
+      ms.push({ r, m, key, A, B, w, no: (l.match_nos || [])[k] || null, real: !(A?.bye || B?.bye) });
+      next.push(w);
+      k++;
+    }
+    out.push({ name: roundName(r, rounds), matches: ms });
+    occ = next;
+  }
+  return { rounds: out, size, champion: occ[0] && !occ[0].bye ? occ[0] : null };
+}
+
+// where one of our athletes stands in a bracket
+function ourStatus(br, e) {
+  for (const rd of br.rounds) {
+    for (const mt of rd.matches) {
+      const isA = mt.A === e, isB = mt.B === e;
+      if (!isA && !isB) continue;
+      if (!mt.real && mt.w === e) continue; // bye
+      const op = isA ? mt.B : mt.A;
+      if (mt.w === e) continue;
+      if (mt.w && mt.w !== e) return { out: true, round: rd.name };
+      return { round: rd.name, op, no: mt.no, mt };
+    }
+  }
+  return br.champion === e ? { champion: true } : null;
+}
+const opLabel = (op, br, mt) => {
+  if (op && !op.bye) return `${esc(op.name)}${op.club ? ` <span class="muted">(${esc(op.club)})</span>` : ''}`;
+  // opponent not decided yet: winner of the feeding match
+  const prev = br.rounds[mt.r - 1]?.matches[(mt.m * 2) + (mt.A === op ? 0 : 1)];
+  if (prev && prev.A && prev.B && !prev.A.bye && !prev.B.bye) return `winner of ${esc(shortName(prev.A.name))} / ${esc(shortName(prev.B.name))}`;
+  return 'TBD';
+};
+
+// order-type division: "Mia: 4th of 7 · 2 ahead"
+const orderText = (l, e) => {
+  const now = l.now_position, ahead = now ? e.position - now : null;
+  return `${ordinal(e.position)} of ${l.entries.length}${ahead == null ? '' : ahead > 0 ? ` · ${ahead} ahead` : ahead === 0 ? ' · performing now' : ' · done'}`;
+};
+// note shown on an athlete's Up Next card
+function divisionNote(lineups, matches, athleteId, event) {
+  for (const l of lineups || []) {
+    if (l.event !== event) continue;
+    const e = l.entries.find((x) => x.athlete_id === athleteId);
+    if (!e) continue;
+    if (l.format === 'order') return `${esc(l.name)}: performs ${orderText(l, e)}`;
+    const br = buildBracket(l, matches); const st = ourStatus(br, e);
+    if (!st || st.out || st.champion) return '';
+    return `${esc(st.round)} vs ${opLabel(st.op, br, st.mt)}`;
+  }
+  return '';
+}
 
 async function poomsaePage(id) {
   app.onchange = null; app.oninput = null;
   const render = async (local) => {
-    const { t, lineups, byId, athletes } = local && cache.id === id ? cache : await loadT(id);
-    const open = ui.openLineup;
+    const { t, lineups, matches } = local && cache.id === id ? cache : await loadT(id);
     const card = (l) => {
+      const expanded = ui.openLineup === l.id;
       const ours = l.entries.filter((e) => e.athlete_id);
-      const now = l.now_position;
-      const expanded = open === l.id; // other clubs' athletes only when asked for
-      return `
-      <section class="card lineup ${ours.some((e) => now && e.position - now >= 0 && e.position - now <= 3) ? 'hot' : ''}">
+      const head = `
         <div class="head">
           <div><div class="name">${esc(l.name)}</div>
-            <div class="meta">${l.court ? 'Court ' + l.court + ' · ' : ''}${l.entries.length} athletes${ours.length ? ` · ${ours.length} ours` : ''}</div></div>
-          <div class="where">${now ? `Now: ${ordinal(now)}` : 'Not started'}</div>
-        </div>
-        ${ours.map((e) => `<div class="small"><strong style="color:var(--accent-ink)">${esc(e.name)}</strong> — ${spotText({ e, l, total: l.entries.length, ahead: now ? e.position - now : null })}</div>`).join('')}
+            <div class="meta">${esc(l.event)}${l.court ? ' · Court ' + l.court : ''} · ${l.entries.length} athletes${ours.length ? ` · ${ours.length} ours` : ''}</div></div>
+          ${l.format === 'order' ? `<div class="where">${l.now_position ? `Now: ${ordinal(l.now_position)}` : 'Not started'}</div>` : ''}
+        </div>`;
+      let summary = '', detail = '';
+      if (l.format === 'order') {
+        summary = ours.map((e) => `<div class="small"><strong style="color:var(--accent-ink)">${esc(e.name)}</strong> — ${orderText(l, e)}</div>`).join('') + `
         <div class="rowx">
-          <button class="btn ghost icon" data-act="lprev" data-l="${l.id}" aria-label="Previous performer" ${now ? '' : 'disabled'}>${UI.minus}</button>
-          <button class="btn dark" style="flex:1" data-act="lnext" data-l="${l.id}">${UI.plus}${now ? 'Next performer' : 'Start (1st up)'}</button>
-        </div>
-        <button class="btn ghost block" data-act="ltoggle" data-l="${l.id}" aria-expanded="${expanded}">${UI.order}${expanded ? 'Hide full order' : `Show full order (${l.entries.length})`}</button>
-        ${expanded ? `
-        <ol class="lineup-list">
-          ${l.entries.map((e) => `
-            <li class="${e.athlete_id ? 'ours' : ''} ${now === e.position ? 'now' : ''} ${now && e.position < now ? 'past' : ''}">
-              <button class="lrow" data-act="lset" data-l="${l.id}" data-p="${e.position}" aria-label="Set ${esc(e.name)} as performing now">
-                <span class="pos">${e.position}</span>
-                <span class="who">${esc(e.name)}${e.club ? `<small>${esc(e.club)}</small>` : ''}</span>
-                ${now === e.position ? '<span class="tag now">NOW</span>' : e.athlete_id ? '<span class="tag ours">OURS</span>' : ''}
-              </button>
-            </li>`).join('')}
-        </ol>
+          <button class="btn ghost icon" data-act="lprev" data-l="${l.id}" aria-label="Previous performer" ${l.now_position ? '' : 'disabled'}>${UI.minus}</button>
+          <button class="btn dark" style="flex:1" data-act="lnext" data-l="${l.id}">${UI.plus}${l.now_position ? 'Next performer' : 'Start (1st up)'}</button>
+        </div>`;
+        detail = `<ol class="lineup-list">${l.entries.map((e) => `
+          <li class="${e.athlete_id ? 'ours' : ''} ${l.now_position === e.position ? 'now' : ''} ${l.now_position && e.position < l.now_position ? 'past' : ''}">
+            <button class="lrow" data-act="lset" data-l="${l.id}" data-p="${e.position}" aria-label="Set ${esc(e.name)} as performing now">
+              <span class="pos">${e.position}</span><span class="who">${esc(e.name)}${e.club ? `<small>${esc(e.club)}</small>` : ''}</span>
+              ${l.now_position === e.position ? '<span class="tag now">NOW</span>' : e.athlete_id ? '<span class="tag ours">OURS</span>' : ''}
+            </button></li>`).join('')}</ol>`;
+      } else {
+        const br = buildBracket(l, matches);
+        summary = ours.map((e) => {
+          const st = ourStatus(br, e);
+          const txt = !st ? '' : st.champion ? '🏆 Won the division' : st.out ? `finished in ${st.round}` : `${st.round} vs ${opLabel(st.op, br, st.mt)}${st.no ? ` · #${st.no}` : ''}`;
+          return `<div class="small"><strong style="color:var(--accent-ink)">${esc(e.name)}</strong> — ${txt}</div>`;
+        }).join('');
+        const ourPath = new Set(ours);
+        const box = (mt, x, isTop) => {
+          if (!x) return `<div class="bslot tbd">—</div>`;
+          if (x.bye) return `<div class="bslot bye">bye</div>`;
+          const won = mt.w === x, lost = mt.w && mt.w !== x && !mt.w.bye;
+          const canTap = mt.real && mt.A && mt.B && !mt.A.bye && !mt.B.bye;
+          return `<button class="bslot ${ourPath.has(x) ? 'ours' : ''} ${won ? 'won' : ''} ${lost ? 'lost' : ''}" ${canTap ? `data-act="bwin" data-l="${l.id}" data-k="${mt.key}" data-p="${x.position}"` : 'disabled'} aria-label="${esc(x.name)}${won ? ', won' : ''}">
+            <span class="bn">${esc(shortName(x.name))}</span>${x.club ? `<span class="bc">${esc(x.club)}</span>` : ''}</button>`;
+        };
+        detail = `
+        <div class="small muted">Scroll sideways. Our results fill in automatically; tap a name to mark another winner.</div>
+        <div class="tree-scroll"><div class="tree">
+          ${br.rounds.map((rd, ri) => `
+            <div class="round ${ri === 0 ? 'first' : ''} ${ri === br.rounds.length - 1 ? 'last' : ''}">
+              <div class="rname">${esc(shortRound(rd.name))}</div>
+              <div class="rmatches">
+              ${rd.matches.map((mt) => `
+                <div class="mwrap"><div class="mbox ${[mt.A, mt.B].some((x) => ourPath.has(x)) ? 'has-ours' : ''} ${!mt.real ? 'byematch' : ''}">
+                  ${mt.no ? `<span class="mno">#${mt.no}</span>` : ''}
+                  ${box(mt, mt.A, true)}${box(mt, mt.B, false)}
+                </div></div>`).join('')}
+              </div>
+            </div>`).join('')}
+          <div class="round champ"><div class="rname">🏆</div><div class="rmatches"><div class="mwrap"><div class="mbox">${br.champion ? `<div class="bslot won ${ourPath.has(br.champion) ? 'ours' : ''}"><span class="bn">${esc(shortName(br.champion.name))}</span></div>` : '<div class="bslot tbd">—</div>'}</div></div></div></div>
+        </div></div>`;
+      }
+      return `
+      <section class="card lineup">
+        ${head}
+        ${summary}
+        <button class="btn ghost block" data-act="ltoggle" data-l="${l.id}" aria-expanded="${expanded}">${UI.order}${expanded ? (l.format === 'order' ? 'Hide full order' : 'Hide bracket') : (l.format === 'order' ? `Show full order (${l.entries.length})` : `Show bracket (${l.entries.length})`)}</button>
+        ${expanded ? `${detail}
         <div class="rowx" style="flex-wrap:wrap">
-          <button class="linkbtn" data-act="ledit" data-l="${l.id}">${ICON.edit}Edit list</button>
+          <button class="linkbtn" data-act="ledit" data-l="${l.id}">${ICON.edit}Edit</button>
           <button class="linkbtn red" data-act="ldel" data-l="${l.id}">${UI.trash}Delete</button>
         </div>
         ${ui.editLineup === l.id ? lineupForm(t, l) : ''}` : ''}
       </section>`;
     };
     const body = `
-      <p class="pad small muted" style="margin:0;padding-bottom:0">Our athletes' place in each poomsae division. Tap <strong>Next performer</strong> as each athlete finishes. <strong>Show full order</strong> lists everyone.</p>
-      <div class="list">${lineups.length ? lineups.map(card).join('') : '<div class="empty">No poomsae order yet. Add one below, or send Claude a photo of the order sheet.</div>'}</div>
-      <div class="section">${ui.editLineup === 'new' ? lineupForm(t, null) : `<button class="btn block" data-act="lnew">${UI.plus}Add a poomsae division</button>`}</div>`;
+      <p class="pad small muted" style="margin:0;padding-bottom:0">Our athletes' place in each division. <strong>Show bracket</strong> opens the full tree with every athlete.</p>
+      <div class="list">${lineups.length ? lineups.map(card).join('') : '<div class="empty">No brackets yet. Add one below, or send Claude a photo of the bracket.</div>'}</div>
+      <div class="section">${ui.editLineup === 'new' ? lineupForm(t, null) : `<button class="btn block" data-act="lnew">${UI.plus}Add a division</button>`}</div>`;
     paint(t, 'poomsae', body);
   };
   const setNow = async (l, pos) => {
-    l.now_position = pos;
-    render(true);
+    l.now_position = pos; render(true);
     await must(sb.from('t_lineups').update({ now_position: pos }).eq('id', l.id)).catch(() => render());
   };
   app.onclick = async (e) => {
@@ -871,8 +982,15 @@ async function poomsaePage(id) {
     if (act === 'lnext') return setNow(l, Math.min(l.entries.length, (l.now_position || 0) + 1));
     if (act === 'lprev') return setNow(l, l.now_position > 1 ? l.now_position - 1 : null);
     if (act === 'lset') return setNow(l, +el.dataset.p === l.now_position ? null : +el.dataset.p);
+    if (act === 'bwin') {
+      const w = { ...(l.winners || {}) }, p = +el.dataset.p;
+      if (w[el.dataset.k] === p) delete w[el.dataset.k]; else w[el.dataset.k] = p;
+      l.winners = w; render(true);
+      await must(sb.from('t_lineups').update({ winners: w }).eq('id', l.id)).catch(() => render());
+      return;
+    }
     if (act === 'ldel') {
-      if (!confirm(`Delete the order for "${l.name}"?`)) return;
+      if (!confirm(`Delete "${l.name}"?`)) return;
       await must(sb.from('t_lineups').delete().eq('id', l.id)); return render();
     }
   };
@@ -881,26 +999,35 @@ async function poomsaePage(id) {
     if (!f) return;
     e.preventDefault();
     const fd = new FormData(f);
-    const rows = parseLineup(fd.get('list'));
-    if (!rows.length) return toast('Add at least one name');
-    const name = String(fd.get('name')).trim() || 'Poomsae';
-    const court = parseInt(fd.get('court'), 10) || null;
+    const lines = parseLines(fd.get('list'));
+    if (!lines.some((x) => !x.bye)) return toast('Add at least one name');
+    const format = fd.get('format');
+    const rec = {
+      name: String(fd.get('name')).trim() || 'Division',
+      court: parseInt(fd.get('court'), 10) || null,
+      format, event: fd.get('event'),
+      match_nos: String(fd.get('match_nos') || '').split(/[\s,]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0),
+    };
     let lid = f.dataset.lineup;
     if (lid === 'new') {
-      const row = await must(sb.from('t_lineups').insert({ tournament_id: id, name, court }).select().single());
+      const row = await must(sb.from('t_lineups').insert({ tournament_id: id, ...rec }).select().single());
       lid = row.id;
     } else {
-      await must(sb.from('t_lineups').update({ name, court }).eq('id', lid));
+      await must(sb.from('t_lineups').update({ ...rec, winners: {} }).eq('id', lid));
       await must(sb.from('t_lineup_entries').delete().eq('lineup_id', lid));
     }
-    // link our athletes by name
     const ours = Object.fromEntries(cache.athletes.map((a) => [normName(a.name), a]));
-    await must(sb.from('t_lineup_entries').insert(rows.map((r, i) => {
-      const me = ours[normName(r.name)];
-      return { tournament_id: id, lineup_id: lid, position: i + 1, name: me ? me.name : r.name, club: r.club || null, athlete_id: me ? me.id : null };
-    })));
-    const linked = rows.filter((r) => ours[normName(r.name)]).length;
-    ui.editLineup = null; ui.openLineup = null;
+    const rows = [];
+    let pos = 0;
+    for (const x of lines) {
+      pos++;
+      if (x.bye) { if (format === 'order') pos--; continue; }
+      const me = ours[normName(x.name)];
+      rows.push({ tournament_id: id, lineup_id: lid, position: pos, name: me ? me.name : x.name, club: x.club || null, athlete_id: me ? me.id : null });
+    }
+    await must(sb.from('t_lineup_entries').insert(rows));
+    const linked = rows.filter((r) => r.athlete_id).length;
+    ui.editLineup = null;
     toast(`Saved ${rows.length} athletes${linked ? ` · ${linked} ours` : ''}`);
     render();
   };
@@ -909,17 +1036,29 @@ async function poomsaePage(id) {
   startPoll(rid, () => (document.activeElement?.matches('input, textarea, select') ? Promise.resolve() : render()), POLL_MS);
 }
 function lineupForm(t, l) {
-  const text = l ? l.entries.map((e) => e.club ? `${e.name}, ${e.club}` : e.name).join('\n') : '';
+  let text = '';
+  if (l) {
+    const max = Math.max(0, ...l.entries.map((e) => e.position));
+    const by = Object.fromEntries(l.entries.map((e) => [e.position, e]));
+    text = Array.from({ length: max }, (_, i) => by[i + 1] ? (by[i + 1].club ? `${by[i + 1].name}, ${by[i + 1].club}` : by[i + 1].name) : 'BYE').join('\n');
+  }
+  const fmt = l?.format || 'bracket';
   return `
   <form class="editbox stack" data-lineup="${l ? l.id : 'new'}" style="margin-top:8px">
+    <div class="field"><label for="ln">Division</label><input id="ln" name="name" value="${esc(l?.name || '')}" placeholder="e.g. Cadet F -47kg" required></div>
     <div class="grid2">
-      <div class="field"><label for="ln">Division</label><input id="ln" name="name" value="${esc(l?.name || '')}" placeholder="e.g. Cadet F Individual" required></div>
+      <div class="field"><label for="le">Event</label><select id="le" name="event">${['Sparring', 'Poomsae'].map((e) => `<option ${(l?.event || 'Sparring') === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
       <div class="field"><label for="lc">Court</label><select id="lc" name="court"><option value="">—</option>${Array.from({ length: t.courts }, (_, i) => i + 1).map((c) => `<option ${l?.court === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
     </div>
-    <div class="field"><label for="ll">Order — one athlete per line, in performing order</label>
-      <textarea id="ll" name="list" rows="8" placeholder="Jake Tran, Calgary TKD&#10;Mia Lee, Champion Hankook&#10;Sara Ng, Golden Tiger">${esc(text)}</textarea>
-      <span class="small muted">"Name, Club" — our athletes are matched by name automatically.</span></div>
-    <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save order</button><button class="btn ghost" type="button" data-act="lcancel">Cancel</button></div>
+    <div class="field"><label for="lf">Type</label><select id="lf" name="format">
+      <option value="bracket" ${fmt === 'bracket' ? 'selected' : ''}>Bracket (tree)</option>
+      <option value="order" ${fmt === 'order' ? 'selected' : ''}>Performing order (list)</option></select></div>
+    <div class="field"><label for="ll">Athletes — one per line, top to bottom as on the sheet</label>
+      <textarea id="ll" name="list" rows="9" placeholder="Jake Tran, Calgary TKD&#10;Mia Lee, Champion Hankook&#10;BYE&#10;Sara Ng, Golden Tiger">${esc(text)}</textarea>
+      <span class="small muted">"Name, Club". Write BYE for an empty spot. Our athletes are matched by name.</span></div>
+    <div class="field"><label for="lm">Match numbers (optional)</label><input id="lm" name="match_nos" value="${esc((l?.match_nos || []).join(', '))}" placeholder="101, 102, 103 … first round top to bottom, then next round">
+    </div>
+    <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save</button><button class="btn ghost" type="button" data-act="lcancel">Cancel</button></div>
   </form>`;
 }
 
