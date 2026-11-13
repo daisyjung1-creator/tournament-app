@@ -47,26 +47,59 @@ function parsePhones(str) {
 
 // bottom sheet to pick which parent number to use
 function closeSheet() { document.getElementById('sheet')?.remove(); }
+// copy text; works on iPhone/iPad Safari too
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy'); ta.remove(); return ok;
+  } catch { return false; }
+}
+
+// Bottom sheet for sending a message: pick a number (or the group), or copy the text to paste elsewhere.
+// opts.text = message (adds Copy buttons), opts.onCopy = called after copying, opts.group = group post, opts.call = phone numbers to call
 function pickNumber(a, title, onPick, opts = {}) {
-  const nums = parsePhones(a.phone);
-  if (!nums.length) return toast(`No phone number for ${first(a.name)} — add it in Setup`);
-  if (nums.length === 1 && !opts.call) return onPick(nums[0]);
+  const nums = opts.group ? [] : parsePhones(a?.phone);
+  if (!opts.group && !nums.length && !opts.text) return toast(`No phone number for ${first(a.name)} — add it in Setup`);
+  if (!opts.group && nums.length === 1 && !opts.call && !opts.text) return onPick(nums[0]);
   closeSheet();
   const el = document.createElement('div');
   el.id = 'sheet';
+  const numRow = (n, i) => `
+      <div class="sheet-row">
+        <button class="btn block ${i ? '' : 'dark'}" data-i="${i}">${UI.chat}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</button>
+        ${opts.text ? `<button class="btn ghost icon" data-copynum="${i}" aria-label="Copy number ${n.display}">${UI.copy}</button>` : ''}
+      </div>`;
   el.innerHTML = `
     <div class="sheet-bg" data-close></div>
     <div class="sheet" role="dialog" aria-label="${esc(title)}">
       <div class="sheet-title">${esc(title)}</div>
-      ${nums.map((n, i) => opts.call
-        ? `<a class="btn block ${i ? '' : 'dark'}" href="tel:+${n.num}">${UI.phone}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</a>`
-        : `<button class="btn block ${i ? '' : 'dark'}" data-i="${i}">${UI.chat}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</button>`).join('')}
+      ${opts.call
+        ? nums.map((n, i) => `<a class="btn block ${i ? '' : 'dark'}" href="tel:+${n.num}">${UI.phone}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</a>`).join('')
+        : opts.group ? `<button class="btn block dark" data-i="0">${UI.users}Open WhatsApp</button>`
+        : nums.length ? nums.map(numRow).join('') : `<div class="small" style="color:var(--red-ink)">No phone number saved — you can still copy the message.</div>`}
+      ${opts.text ? `
+      <button class="btn block" data-copy>${UI.copy}Copy message</button>
+      <details class="sheet-preview"><summary class="small">Preview message</summary><pre class="preview">${esc(opts.text)}</pre></details>` : ''}
       <button class="btn ghost block" data-close>Cancel</button>
     </div>`;
-  el.addEventListener('click', (e) => {
+  el.addEventListener('click', async (e) => {
     if (e.target.closest('[data-close]')) return closeSheet();
+    const cp = e.target.closest('[data-copy]');
+    if (cp) {
+      if (await copyText(opts.text)) {
+        cp.innerHTML = `${UI.check}Copied — paste it in your app`;
+        toast('Message copied');
+        if (opts.onCopy) opts.onCopy();
+      } else toast('Copy not allowed on this device');
+      return;
+    }
+    const cn = e.target.closest('[data-copynum]');
+    if (cn) { if (await copyText(nums[+cn.dataset.copynum].display)) { cn.innerHTML = UI.check; toast('Number copied'); } return; }
     const b = e.target.closest('[data-i]');
-    if (b) { closeSheet(); onPick(nums[+b.dataset.i]); }
+    if (b) { closeSheet(); onPick(opts.group ? null : nums[+b.dataset.i]); }
     if (e.target.closest('a[href^="tel:"]')) setTimeout(closeSheet, 300);
   });
   document.body.appendChild(el);
@@ -137,6 +170,7 @@ const ICON = {
 };
 
 const UI = {
+  copy: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   order: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>',
   users: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
   chat: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
@@ -617,17 +651,17 @@ async function nextPage(id) {
       const text = act === 'group' ? groupMessage(m, a, cache.t, s) : parentMessage(m, a, cache.t, s);
       const col = act === 'group' ? 'group_notified_at' : 'parent_notified_at';
       const who = act === 'group' ? 'group' : 'parent';
-      const send = (num) => {
+      const log = () => {
         const now = new Date().toISOString();
         const nl = { ...(m.notify_log || {}) };
         nl[who] = { ...(nl[who] || {}), [stageOf(s)]: now };
         m.notify_log = nl;
-        openMessage(act === 'group' ? 'group' : a.channel, num?.num, text);
         render(true);
         sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
       };
-      if (act === 'group') return send(null);
-      return pickNumber(a, `Message ${first(a.name)}'s parent`, send);
+      const send = (num) => { openMessage(act === 'group' ? 'group' : a.channel, num?.num, text); log(); };
+      if (act === 'group') return pickNumber(a, `Post ${first(a.name)} to the group`, send, { group: true, text, onCopy: log });
+      return pickNumber(a, `Message ${first(a.name)}'s parent`, send, { text, onCopy: log });
     }
     if (act === 'call') {
       const a = cache.byId[el.dataset.a];
@@ -1140,7 +1174,7 @@ async function resultsPage(id) {
     const el = e.target.closest('[data-act]');
     if (!el || !cache.t) return;
     const { text } = build();
-    if (el.dataset.act === 'postres') return openMessage('group', null, text);
+    if (el.dataset.act === 'postres') return pickNumber(null, 'Post results to the group', () => openMessage('group', null, text), { group: true, text });
     if (el.dataset.act === 'copyres') {
       try { await navigator.clipboard.writeText(text); toast('Results copied'); } catch { toast('Copy not allowed — use Post to group'); }
     }
@@ -1382,15 +1416,14 @@ async function setupPage(id) {
     }
     if (act === 'dayinfo') {
       const ms = cache.matches.filter((m) => m.athlete_id === a.id);
-      return pickNumber(a, `Send day-before info to ${first(a.name)}'s parent`, (num) => {
-        openMessage(a.channel, num.num, dayBeforeMessage(cache.t, a, ms));
-        sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).eq('id', a.id).then(() => render());
-      });
+      const text = dayBeforeMessage(cache.t, a, ms);
+      const mark = () => sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).eq('id', a.id).then(() => render());
+      return pickNumber(a, `Send day-before info to ${first(a.name)}'s parent`, (num) => { openMessage(a.channel, num.num, text); mark(); }, { text, onCopy: mark });
     }
     if (act === 'groupsched') {
-      openMessage('group', null, groupScheduleMessage(cache.t, cache.athletes, cache.matches));
-      sb.from('t_tournaments').update({ group_schedule_sent_at: new Date().toISOString() }).eq('id', id).then(() => render());
-      return;
+      const text = groupScheduleMessage(cache.t, cache.athletes, cache.matches);
+      const mark = () => sb.from('t_tournaments').update({ group_schedule_sent_at: new Date().toISOString() }).eq('id', id).then(() => render());
+      return pickNumber(null, 'Post the full schedule to the group', () => { openMessage('group', null, text); mark(); }, { group: true, text, onCopy: mark });
     }
     if (act === 'channel') { await must(sb.from('t_athletes').update({ channel: a.channel === 'sms' ? 'whatsapp' : 'sms' }).eq('id', a.id)); return render(); }
     if (act === 'edita') { ui.editAth = ui.editAth === a.id ? null : a.id; ui.editMatch = null; return render(); }

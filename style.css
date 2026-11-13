@@ -301,3 +301,11 @@ textarea { width: 100%; border: 1px solid #D4D4D4; border-radius: 10px; padding:
 .bslot.lost { opacity: .4; }
 .bslot.tbd, .bslot.bye { color: var(--muted); font-size: 12px; cursor: default; }
 .order-note span { min-width: 0; }
+
+/* message sheet: copy buttons */
+.sheet { max-height: 88vh; overflow-y: auto; }
+.sheet-row { display: flex; gap: 8px; }
+.sheet-row .btn.block { flex: 1; }
+.sheet .btn.icon { height: 52px; width: 52px; }
+.sheet-preview summary { min-height: 32px; display: flex; align-items: center; color: var(--muted); }
+.sheet-preview .preview { max-height: 30vh; overflow-y: auto; }
