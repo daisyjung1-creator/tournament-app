@@ -278,7 +278,7 @@ const GUIDE = [
     'All athletes, including black belts, should attend the team gathering for the team warm-up and the information Master Daisy shares after the coaches’ meeting.',
   ]],
   ['Match numbers & rings', [
-    'Always check BOTH your child’s match number and ring, especially while warming up away from the competition area.',
+    'Always check BOTH your athlete’s match number and ring, especially while warming up away from the competition area.',
     '⚠️ An athlete who does not report when called is disqualified. There are no exhibition matches.',
   ]],
   ['Sparring gear', [
@@ -292,7 +292,7 @@ const GUIDE = [
     'Make weight at home before the tournament. Cutting weight at the venue is not allowed.',
     'Be at weigh-in on time.',
     'At the tournament, an athlete who does not make weight is disqualified.',
-    'Team Hankook rule: missing weight also affects your child’s next tournament.',
+    'Team Hankook rule: missing weight also affects the athlete’s next tournament.',
   ]],
   ['Uniform', [
     'Venues often have no change rooms. Please arrive already dressed in your dobok.',
