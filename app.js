@@ -302,14 +302,38 @@ const GUIDE = [
     'Stay in the spectator areas; do not enter athlete or official areas.',
     'Questions or concerns about a match or result go to Master Daisy or an instructor first — please do not approach the organizers directly.',
   ]],
-  ['Food', [
-    'Bring water, snacks and lunch — athletes are often at the venue most of the day.',
-  ]],
 ];
+const guideBody = () => GUIDE.map(([h, items]) => `<h3>${esc(h)}</h3><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
+// pop the guide up once when a parent opens their link; "Don't show again" remembers it on this phone
+let guidePopped = false;
+function guidePopup(token) {
+  if (guidePopped || document.getElementById('guidepop')) return;
+  guidePopped = true;
+  const key = 'guideHidden:' + token;
+  try { if (localStorage.getItem(key)) return; } catch (e) {}
+  const el = document.createElement('div');
+  el.id = 'guidepop';
+  el.innerHTML = `<div class="sheet-bg" data-gp="close"></div>
+    <div class="guidepop guide" role="dialog" aria-modal="true" aria-labelledby="gpt">
+      <div class="gp-head"><span id="gpt">📋 Team Hankook tournament guide</span><small>Please read before the tournament</small></div>
+      <div class="gp-body">${guideBody()}<p class="small muted" style="margin:12px 0 0">Questions? Talk to Master Daisy or any Team Hankook instructor.</p></div>
+      <div class="gp-foot">
+        <button class="btn dark block" data-gp="close">Got it</button>
+        <button class="btn ghost block" data-gp="never">Don't show again</button>
+      </div>
+    </div>`;
+  el.onclick = (e) => {
+    const b = e.target.closest('[data-gp]');
+    if (!b) return;
+    if (b.dataset.gp === 'never') { try { localStorage.setItem(key, '1'); } catch (err) {} }
+    el.remove();
+  };
+  document.body.appendChild(el);
+}
 const guideHTML = () => `
   <details class="guide" ${ui.guideOpen ? 'open' : ''}>
     <summary><span>📋 Team Hankook tournament guide</span><small>Please read before the tournament</small></summary>
-    ${GUIDE.map(([h, items]) => `<h3>${esc(h)}</h3><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')}
+    ${guideBody()}
     <p class="small muted" style="margin:12px 0 0">Questions? Talk to Master Daisy or any Team Hankook instructor.</p>
   </details>`;
 
@@ -1502,6 +1526,7 @@ async function parentPage(token) {
       app.innerHTML = `<div class="empty">This link isn't active. Please check with your coach.</div>`;
       stopPoll(); return;
     }
+    guidePopup(token);
     const ms = data.matches.map((m) => {
       const s = statusOf(m, { [m.court]: m.current });
       if (s.key === 'past') s.label = 'FINISHING';
