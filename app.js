@@ -877,6 +877,33 @@ const opLabel = (op, br, mt) => {
   return 'TBD';
 };
 
+// draw a bracket as a tree; tappable = coaches can mark winners
+function bracketTree(l, br, ourPath, tappable) {
+  const box = (mt, x) => {
+    if (!x) return `<div class="bslot tbd">—</div>`;
+    if (x.bye) return `<div class="bslot bye">bye</div>`;
+    const won = mt.w === x, lost = mt.w && mt.w !== x && !mt.w.bye;
+    const canTap = tappable && mt.real && mt.A && mt.B && !mt.A.bye && !mt.B.bye;
+    return `<${canTap ? 'button' : 'div'} class="bslot ${ourPath.has(x) ? 'ours' : ''} ${won ? 'won' : ''} ${lost ? 'lost' : ''}" ${canTap ? `data-act="bwin" data-l="${l.id}" data-k="${mt.key}" data-p="${x.position}" aria-label="${esc(x.name)}${won ? ', won' : ''}"` : ''}>
+      <span class="bn">${esc(shortName(x.name))}</span>${x.club ? `<span class="bc">${esc(x.club)}</span>` : ''}</${canTap ? 'button' : 'div'}>`;
+  };
+  return `
+  <div class="tree-scroll"><div class="tree">
+    ${br.rounds.map((rd, ri) => `
+      <div class="round ${ri === 0 ? 'first' : ''} ${ri === br.rounds.length - 1 ? 'last' : ''}">
+        <div class="rname">${esc(shortRound(rd.name))}</div>
+        <div class="rmatches">
+        ${rd.matches.map((mt) => `
+          <div class="mwrap"><div class="mbox ${[mt.A, mt.B].some((x) => ourPath.has(x)) ? 'has-ours' : ''} ${!mt.real ? 'byematch' : ''}">
+            ${mt.no ? `<span class="mno">#${esc(mt.no)}</span>` : ''}
+            ${box(mt, mt.A)}${box(mt, mt.B)}
+          </div></div>`).join('')}
+        </div>
+      </div>`).join('')}
+    <div class="round champ"><div class="rname">🏆</div><div class="rmatches"><div class="mwrap"><div class="mbox">${br.champion ? `<div class="bslot won ${ourPath.has(br.champion) ? 'ours' : ''}"><span class="bn">${esc(shortName(br.champion.name))}</span></div>` : '<div class="bslot tbd">—</div>'}</div></div></div></div>
+  </div></div>`;
+}
+
 // order-type division: "Mia: 4th of 7 · 2 ahead"
 const orderText = (l, e) => {
   const now = l.now_position, ahead = now ? e.position - now : null;
@@ -929,31 +956,7 @@ async function poomsaePage(id) {
           const txt = !st ? '' : st.champion ? '🏆 Won the division' : st.out ? `finished in ${st.round}` : `${st.round} vs ${opLabel(st.op, br, st.mt)}${st.no ? ` · #${st.no}` : ''}`;
           return `<div class="small"><strong style="color:var(--accent-ink)">${esc(e.name)}</strong> — ${txt}</div>`;
         }).join('');
-        const ourPath = new Set(ours);
-        const box = (mt, x, isTop) => {
-          if (!x) return `<div class="bslot tbd">—</div>`;
-          if (x.bye) return `<div class="bslot bye">bye</div>`;
-          const won = mt.w === x, lost = mt.w && mt.w !== x && !mt.w.bye;
-          const canTap = mt.real && mt.A && mt.B && !mt.A.bye && !mt.B.bye;
-          return `<button class="bslot ${ourPath.has(x) ? 'ours' : ''} ${won ? 'won' : ''} ${lost ? 'lost' : ''}" ${canTap ? `data-act="bwin" data-l="${l.id}" data-k="${mt.key}" data-p="${x.position}"` : 'disabled'} aria-label="${esc(x.name)}${won ? ', won' : ''}">
-            <span class="bn">${esc(shortName(x.name))}</span>${x.club ? `<span class="bc">${esc(x.club)}</span>` : ''}</button>`;
-        };
-        detail = `
-        <div class="small muted">Scroll sideways. Our results fill in automatically; tap a name to mark another winner.</div>
-        <div class="tree-scroll"><div class="tree">
-          ${br.rounds.map((rd, ri) => `
-            <div class="round ${ri === 0 ? 'first' : ''} ${ri === br.rounds.length - 1 ? 'last' : ''}">
-              <div class="rname">${esc(shortRound(rd.name))}</div>
-              <div class="rmatches">
-              ${rd.matches.map((mt) => `
-                <div class="mwrap"><div class="mbox ${[mt.A, mt.B].some((x) => ourPath.has(x)) ? 'has-ours' : ''} ${!mt.real ? 'byematch' : ''}">
-                  ${mt.no ? `<span class="mno">#${mt.no}</span>` : ''}
-                  ${box(mt, mt.A, true)}${box(mt, mt.B, false)}
-                </div></div>`).join('')}
-              </div>
-            </div>`).join('')}
-          <div class="round champ"><div class="rname">🏆</div><div class="rmatches"><div class="mwrap"><div class="mbox">${br.champion ? `<div class="bslot won ${ourPath.has(br.champion) ? 'ours' : ''}"><span class="bn">${esc(shortName(br.champion.name))}</span></div>` : '<div class="bslot tbd">—</div>'}</div></div></div></div>
-        </div></div>`;
+        detail = `<div class="small muted">Scroll sideways. Our results fill in automatically; tap a name to mark another winner.</div>${bracketTree(l, br, new Set(ours), true)}`;
       }
       return `
       <section class="card lineup">
@@ -1014,7 +1017,8 @@ async function poomsaePage(id) {
       name: String(fd.get('name')).trim() || 'Division',
       court: parseInt(fd.get('court'), 10) || null,
       format, event: fd.get('event'),
-      match_nos: String(fd.get('match_nos') || '').split(/[\s,]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0),
+      // keep numbers as written ("4-50", "101"); an empty spot between commas = a bye match
+      match_nos: (() => { const raw = String(fd.get('match_nos') || '').trim(); if (!raw) return []; return (raw.includes(',') ? raw.split(',') : raw.split(/\s+/)).map((x) => x.trim() || null); })(),
     };
     let lid = f.dataset.lineup;
     if (lid === 'new') {
@@ -1064,7 +1068,7 @@ function lineupForm(t, l) {
     <div class="field"><label for="ll">Athletes — one per line, top to bottom as on the sheet</label>
       <textarea id="ll" name="list" rows="9" placeholder="Jake Tran, Calgary TKD&#10;Mia Lee, Champion Hankook&#10;BYE&#10;Sara Ng, Golden Tiger">${esc(text)}</textarea>
       <span class="small muted">"Name, Club". Write BYE for an empty spot. Our athletes are matched by name.</span></div>
-    <div class="field"><label for="lm">Match numbers (optional)</label><input id="lm" name="match_nos" value="${esc((l?.match_nos || []).join(', '))}" placeholder="101, 102, 103 … first round top to bottom, then next round">
+    <div class="field"><label for="lm">Match numbers (optional)</label><input id="lm" name="match_nos" value="${esc((l?.match_nos || []).map((x) => x ?? '').join(', '))}" placeholder="4-50, 4-51 … top to bottom, round by round; leave a blank between commas for a bye">
     </div>
     <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save</button><button class="btn ghost" type="button" data-act="lcancel">Cancel</button></div>
   </form>`;
@@ -1464,7 +1468,41 @@ async function parentPage(token) {
             <div class="small muted">Court ${m.court} · Match #${m.match_no}${m.division ? ' · ' + esc(m.division) : ''}</div>${m.corner ? `<div style="margin-top:4px">${cornerChip(m.corner)}</div>` : ''}</div>
             <strong class="small">${m.result ? esc(m.result) : esc(m.s.label.charAt(0) + m.s.label.slice(1).toLowerCase())}</strong></div>`).join('') || '<div class="small muted">No matches posted yet.</div>'}
       </div>
+      ${(data.brackets || []).length ? `
+      <div class="pad" style="padding-top:0">
+        <h2>Bracket${data.brackets.length > 1 ? 's' : ''}</h2>
+        <div class="stack">${data.brackets.map((l) => {
+          // only this child's results are known here
+          const myMatches = data.matches.map((m) => ({ ...m, athlete_id: data.me }));
+          const me = l.entries.find((e) => e.athlete_id === data.me);
+          const open = ui.openPB === l.id;
+          let line = '', tree = '';
+          if (l.format === 'order') {
+            line = me ? `${esc(childFirst)} performs ${orderText(l, me)}` : '';
+            tree = `<ol class="lineup-list">${l.entries.map((e) => `<li class="${e === me ? 'ours' : ''} ${l.now_position === e.position ? 'now' : ''} ${l.now_position && e.position < l.now_position ? 'past' : ''}"><div class="lrow"><span class="pos">${e.position}</span><span class="who">${esc(e.name)}${e.club ? `<small>${esc(e.club)}</small>` : ''}</span>${l.now_position === e.position ? '<span class="tag now">NOW</span>' : ''}</div></li>`).join('')}</ol>`;
+          } else {
+            const br = buildBracket(l, myMatches);
+            const st = me && ourStatus(br, me);
+            line = !st ? '' : st.champion ? `🏆 ${esc(childFirst)} won the division!` : st.out ? `${esc(childFirst)} finished in ${esc(st.round)}` : `${esc(st.round)} vs ${opLabel(st.op, br, st.mt)}${st.no ? ` · #${esc(st.no)}` : ''}`;
+            tree = bracketTree(l, br, new Set(me ? [me] : []), false);
+          }
+          return `
+          <section class="card lineup">
+            <div><div class="name">${esc(l.name)}</div><div class="meta">${esc(l.event)}${l.court ? ' · Court ' + l.court : ''} · ${l.entries.length} athletes</div></div>
+            ${line ? `<div class="small"><strong style="color:var(--accent-ink)">${line}</strong></div>` : ''}
+            <button class="btn ghost block" data-pb="${l.id}" aria-expanded="${open}">${UI.order}${open ? 'Hide bracket' : 'Show bracket'}</button>
+            ${open ? `${l.format === 'order' ? '' : '<div class="small muted">Scroll sideways to see every round.</div>'}${tree}` : ''}
+          </section>`;
+        }).join('')}</div>
+      </div>` : ''}
       <p class="small muted" style="text-align:center;padding:0 20px 24px">Updated by your coaches · refreshes automatically<br>– ${esc(data.signoff)}</p>`);
+  };
+  app.onclick = (e) => {
+    const b = e.target.closest('[data-pb]');
+    if (!b) return;
+    ui.openPB = ui.openPB === b.dataset.pb ? null : b.dataset.pb;
+    delete app.dataset.page; // force a redraw
+    render();
   };
   const rid = routeId;
   await render();
