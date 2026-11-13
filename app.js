@@ -710,7 +710,13 @@ async function courtsPage(id) {
   const render = async (local) => {
     const { t, matches, courts, byId } = local && cache.id === id ? cache : await loadT(id);
     const cells = [];
-    for (let c = 1; c <= t.courts; c++) {
+    // only rings where our athletes compete (or that a coach already started)
+    const used = new Set(matches.map((m) => m.court).filter((c) => c <= t.courts));
+    Object.keys(courts).forEach((c) => { if (courts[c] != null) used.add(+c); });
+    const allRings = Array.from({ length: t.courts }, (_, i) => i + 1);
+    const shown = ui.allCourts || !used.size ? allRings : allRings.filter((c) => used.has(c));
+    const hidden = allRings.length - shown.length;
+    for (const c of shown) {
       const cur = courts[c];
       const upcoming = matches
         .filter((m) => m.court === c && !m.result)
@@ -743,7 +749,8 @@ async function courtsPage(id) {
     paint(t, 'courts', `
       ${coachBanner(coachLoad(t, matches, courts), t)}
       <p class="pad small muted" style="margin:0;padding-bottom:0">Type the match number on the mat and tap <strong>Set</strong> once. After that, tap <strong>+</strong> each time a match finishes.</p>
-      <div class="courts">${cells.join('')}</div>`);
+      <div class="courts">${cells.join('')}</div>
+      ${hidden || ui.allCourts ? `<div class="pad" style="padding-top:0"><button class="btn ghost block" data-act="allcourts">${ui.allCourts ? 'Hide rings we don\'t use' : `Show all ${allRings.length} rings (${hidden} not used by our athletes)`}</button></div>` : ''}`);
     window.scrollTo(0, y);
   };
 
@@ -765,6 +772,7 @@ async function courtsPage(id) {
     if (+v > 0) { await save(c, parseInt(v, 10)); toast(`Court ${c} set to #${parseInt(v, 10)}`); }
   };
   app.onclick = async (e) => {
+    if (e.target.closest('[data-act=allcourts]')) { ui.allCourts = !ui.allCourts; return render(true); }
     const el = e.target.closest('[data-act=inc],[data-act=dec]');
     if (!el || !cache.t) return;
     const c = parseInt(el.dataset.c, 10);
