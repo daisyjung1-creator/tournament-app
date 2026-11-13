@@ -137,6 +137,7 @@ const ICON = {
 };
 
 const UI = {
+  order: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>',
   users: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
   chat: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
   login: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>',
@@ -304,12 +305,13 @@ async function route() {
   if (pm) return parentPage(pm[1]);
 
   if (!session) return loginPage();
-  const tm = h.match(/^#\/t\/([0-9a-f-]{36})\/(next|courts|setup|results)$/i);
+  const tm = h.match(/^#\/t\/([0-9a-f-]{36})\/(next|courts|setup|results|poomsae)$/i);
   if (tm) {
     const [, id, tab] = tm;
     if (tab === 'next') return nextPage(id);
     if (tab === 'courts') return courtsPage(id);
     if (tab === 'results') return resultsPage(id);
+    if (tab === 'poomsae') return poomsaePage(id);
     return setupPage(id);
   }
   return homePage();
@@ -417,21 +419,24 @@ async function homePage() {
 
 // ---------- tournament data ----------
 async function loadT(id) {
-  const [t, athletes, matches, courtRows] = await Promise.all([
+  const [t, athletes, matches, courtRows, lineups, entries] = await Promise.all([
     must(sb.from('t_tournaments').select('*').eq('id', id).single()),
     must(sb.from('t_athletes').select('*').eq('tournament_id', id).order('name')),
     must(sb.from('t_matches').select('*').eq('tournament_id', id).order('match_no')),
     must(sb.from('t_courts').select('*').eq('tournament_id', id)),
+    must(sb.from('t_lineups').select('*').eq('tournament_id', id).order('created_at')),
+    must(sb.from('t_lineup_entries').select('*').eq('tournament_id', id).order('position')),
   ]);
+  lineups.forEach((l) => { l.entries = entries.filter((e) => e.lineup_id === l.id).sort((x, y) => x.position - y.position); });
   const courts = {};
   courtRows.forEach((c) => { courts[c.court] = c.current_match; });
   const byId = Object.fromEntries(athletes.map((a) => [a.id, a]));
-  cache = { id, t, athletes, matches, courts, byId };
+  cache = { id, t, athletes, matches, courts, byId, lineups };
   return cache;
 }
 
 function shell(t, tab, body) {
-  const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['results', 'Results', UI.trophy], ['setup', 'Setup', ICON.edit]];
+  const tabs = [['next', 'Up Next', ICON.list], ['courts', 'Courts', ICON.grid], ['poomsae', 'Poomsae', UI.order], ['results', 'Results', UI.trophy], ['setup', 'Setup', ICON.edit]];
   return `
     <header class="top">
       <div class="row"><img class="logo" src="logo.png" alt="High Performance Hankook"><span class="eyebrow">${esc(t.event_date || '')}</span></div>
@@ -511,6 +516,7 @@ async function nextPage(id) {
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span>
             ${s.key === 'done' ? cornerChip(m.corner) : `<br><button class="corner-btn ${m.corner ? m.corner.toLowerCase() : ''}" data-act="corner" data-m="${m.id}" aria-label="Corner: ${m.corner || 'not set'}. Tap to change">${m.corner ? (m.corner === 'Blue' ? 'Chung · Blue' : 'Hong · Red') : 'Set corner'}</button>`}</div>
         </div>
+        ${(() => { if (m.event !== 'Poomsae' || s.key === 'done') return ''; const sp = lineupSpot(cache.lineups, a.id); return sp ? `<div class="order-note">${UI.order}${esc(sp.l.name)}: performs ${spotText(sp)}</div>` : ''; })()}
         ${m.event === 'Sparring' && s.key !== 'done' && needsWeighIn(a, matches) ? `<button class="weigh need" data-act="weigh" data-a="${a.id}">⚖ Weigh-in not done — tap when passed</button>` : ''}
         ${clash.map(({ o, s: os }) => `<div class="clash" role="note"><strong>⚠ Also needed on Court ${o.court}</strong> — ${esc(evLabel(o))} #${o.match_no}, ${os.away <= 0 ? 'on the mat now' : os.away === 1 ? 'on deck' : os.away + ' away'}. Tell the court table if needed.</div>`).join('')}
         ${['done', 'now', 'past'].includes(s.key) ? '' : `
@@ -776,6 +782,145 @@ async function courtsPage(id) {
   await render();
   // don't redraw while a coach is typing a number
   startPoll(rid, () => (document.activeElement?.matches('input') ? Promise.resolve() : render()), POLL_MS);
+}
+
+// ---------- Poomsae order ----------
+// "Mia: 5th of 12 · 3 ahead" for an athlete, if they are in a lineup
+function lineupSpot(lineups, athleteId) {
+  for (const l of lineups || []) {
+    const e = l.entries.find((x) => x.athlete_id === athleteId);
+    if (!e) continue;
+    const ahead = l.now_position ? e.position - l.now_position : null;
+    return { l, e, ahead, total: l.entries.length };
+  }
+  return null;
+}
+const spotText = (sp) => `${ordinal(sp.e.position)} of ${sp.total}${sp.ahead == null ? '' : sp.ahead > 0 ? ` · ${sp.ahead} ahead` : sp.ahead === 0 ? ' · performing now' : ' · done'}`;
+const ordinal = (n) => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+
+// "Mia Lee, Champion Hankook" / "Mia Lee - Hankook" / "1. Mia Lee (Hankook)" -> { name, club }
+function parseLineup(text) {
+  return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    line = line.replace(/^\s*\d+\s*[.)\-:]?\s+/, '');
+    let m = line.match(/^(.*?)\s*\((.+)\)\s*$/) || line.match(/^(.*?)\s*(?:,|\s-\s|\t|\s\|\s)\s*(.+)$/);
+    return m ? { name: m[1].trim(), club: m[2].trim() } : { name: line, club: '' };
+  });
+}
+const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+
+async function poomsaePage(id) {
+  app.onchange = null; app.oninput = null;
+  const render = async (local) => {
+    const { t, lineups, byId, athletes } = local && cache.id === id ? cache : await loadT(id);
+    const open = ui.openLineup;
+    const card = (l) => {
+      const ours = l.entries.filter((e) => e.athlete_id);
+      const now = l.now_position;
+      const expanded = open === l.id || lineups.length === 1;
+      return `
+      <section class="card lineup ${ours.some((e) => now && e.position - now >= 0 && e.position - now <= 3) ? 'hot' : ''}">
+        <div class="head">
+          <div><div class="name">${esc(l.name)}</div>
+            <div class="meta">${l.court ? 'Court ' + l.court + ' · ' : ''}${l.entries.length} athletes${ours.length ? ` · ${ours.length} ours` : ''}</div></div>
+          <div class="where">${now ? `Now: ${ordinal(now)}` : 'Not started'}</div>
+        </div>
+        ${ours.map((e) => `<div class="small"><strong style="color:var(--accent-ink)">${esc(e.name)}</strong> — ${spotText({ e, l, total: l.entries.length, ahead: now ? e.position - now : null })}</div>`).join('')}
+        <div class="rowx">
+          <button class="btn ghost icon" data-act="lprev" data-l="${l.id}" aria-label="Previous performer" ${now ? '' : 'disabled'}>${UI.minus}</button>
+          <button class="btn dark" style="flex:1" data-act="lnext" data-l="${l.id}">${UI.plus}${now ? 'Next performer' : 'Start (1st up)'}</button>
+          ${lineups.length > 1 ? `<button class="btn ghost" data-act="ltoggle" data-l="${l.id}">${expanded ? 'Hide' : 'Show all'}</button>` : ''}
+        </div>
+        ${expanded ? `
+        <ol class="lineup-list">
+          ${l.entries.map((e) => `
+            <li class="${e.athlete_id ? 'ours' : ''} ${now === e.position ? 'now' : ''} ${now && e.position < now ? 'past' : ''}">
+              <button class="lrow" data-act="lset" data-l="${l.id}" data-p="${e.position}" aria-label="Set ${esc(e.name)} as performing now">
+                <span class="pos">${e.position}</span>
+                <span class="who">${esc(e.name)}${e.club ? `<small>${esc(e.club)}</small>` : ''}</span>
+                ${now === e.position ? '<span class="tag now">NOW</span>' : e.athlete_id ? '<span class="tag ours">OURS</span>' : ''}
+              </button>
+            </li>`).join('')}
+        </ol>
+        <div class="rowx" style="flex-wrap:wrap">
+          <button class="linkbtn" data-act="ledit" data-l="${l.id}">${ICON.edit}Edit list</button>
+          <button class="linkbtn red" data-act="ldel" data-l="${l.id}">${UI.trash}Delete</button>
+        </div>
+        ${ui.editLineup === l.id ? lineupForm(t, l) : ''}` : ''}
+      </section>`;
+    };
+    const body = `
+      <p class="pad small muted" style="margin:0;padding-bottom:0">Full performing order for each poomsae division. Our athletes are highlighted. Tap a name (or <strong>Next performer</strong>) to mark who is performing now.</p>
+      <div class="list">${lineups.length ? lineups.map(card).join('') : '<div class="empty">No poomsae order yet. Add one below, or send Claude a photo of the order sheet.</div>'}</div>
+      <div class="section">${ui.editLineup === 'new' ? lineupForm(t, null) : `<button class="btn block" data-act="lnew">${UI.plus}Add a poomsae division</button>`}</div>`;
+    paint(t, 'poomsae', body);
+  };
+  const setNow = async (l, pos) => {
+    l.now_position = pos;
+    render(true);
+    await must(sb.from('t_lineups').update({ now_position: pos }).eq('id', l.id)).catch(() => render());
+  };
+  app.onclick = async (e) => {
+    const el = e.target.closest('[data-act]');
+    if (!el || !cache.t) return;
+    const act = el.dataset.act;
+    const l = el.dataset.l && cache.lineups.find((x) => x.id === el.dataset.l);
+    if (act === 'lnew') { ui.editLineup = 'new'; return render(true); }
+    if (act === 'ledit') { ui.editLineup = l.id; return render(true); }
+    if (act === 'lcancel') { ui.editLineup = null; return render(true); }
+    if (act === 'ltoggle') { ui.openLineup = ui.openLineup === l.id ? null : l.id; return render(true); }
+    if (act === 'lnext') return setNow(l, Math.min(l.entries.length, (l.now_position || 0) + 1));
+    if (act === 'lprev') return setNow(l, l.now_position > 1 ? l.now_position - 1 : null);
+    if (act === 'lset') return setNow(l, +el.dataset.p === l.now_position ? null : +el.dataset.p);
+    if (act === 'ldel') {
+      if (!confirm(`Delete the order for "${l.name}"?`)) return;
+      await must(sb.from('t_lineups').delete().eq('id', l.id)); return render();
+    }
+  };
+  app.onsubmit = async (e) => {
+    const f = e.target.closest('form[data-lineup]');
+    if (!f) return;
+    e.preventDefault();
+    const fd = new FormData(f);
+    const rows = parseLineup(fd.get('list'));
+    if (!rows.length) return toast('Add at least one name');
+    const name = String(fd.get('name')).trim() || 'Poomsae';
+    const court = parseInt(fd.get('court'), 10) || null;
+    let lid = f.dataset.lineup;
+    if (lid === 'new') {
+      const row = await must(sb.from('t_lineups').insert({ tournament_id: id, name, court }).select().single());
+      lid = row.id;
+    } else {
+      await must(sb.from('t_lineups').update({ name, court }).eq('id', lid));
+      await must(sb.from('t_lineup_entries').delete().eq('lineup_id', lid));
+    }
+    // link our athletes by name
+    const ours = Object.fromEntries(cache.athletes.map((a) => [normName(a.name), a]));
+    await must(sb.from('t_lineup_entries').insert(rows.map((r, i) => {
+      const me = ours[normName(r.name)];
+      return { tournament_id: id, lineup_id: lid, position: i + 1, name: me ? me.name : r.name, club: r.club || null, athlete_id: me ? me.id : null };
+    })));
+    const linked = rows.filter((r) => ours[normName(r.name)]).length;
+    ui.editLineup = null; ui.openLineup = lid;
+    toast(`Saved ${rows.length} athletes${linked ? ` · ${linked} ours` : ''}`);
+    render();
+  };
+  const rid = routeId;
+  await render();
+  startPoll(rid, () => (document.activeElement?.matches('input, textarea, select') ? Promise.resolve() : render()), POLL_MS);
+}
+function lineupForm(t, l) {
+  const text = l ? l.entries.map((e) => e.club ? `${e.name}, ${e.club}` : e.name).join('\n') : '';
+  return `
+  <form class="editbox stack" data-lineup="${l ? l.id : 'new'}" style="margin-top:8px">
+    <div class="grid2">
+      <div class="field"><label for="ln">Division</label><input id="ln" name="name" value="${esc(l?.name || '')}" placeholder="e.g. Cadet F Individual" required></div>
+      <div class="field"><label for="lc">Court</label><select id="lc" name="court"><option value="">—</option>${Array.from({ length: t.courts }, (_, i) => i + 1).map((c) => `<option ${l?.court === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label for="ll">Order — one athlete per line, in performing order</label>
+      <textarea id="ll" name="list" rows="8" placeholder="Jake Tran, Calgary TKD&#10;Mia Lee, Champion Hankook&#10;Sara Ng, Golden Tiger">${esc(text)}</textarea>
+      <span class="small muted">"Name, Club" — our athletes are matched by name automatically.</span></div>
+    <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save order</button><button class="btn ghost" type="button" data-act="lcancel">Cancel</button></div>
+  </form>`;
 }
 
 // ---------- Results ----------
