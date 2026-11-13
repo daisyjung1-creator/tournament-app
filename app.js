@@ -30,6 +30,48 @@ const digits = (phone) => {
   if (d.length === 10) d = '1' + d; // North American number
   return d;
 };
+// one field can hold several numbers: "780-722-2161, 587-990-8926 (Dad)"
+function parsePhones(str) {
+  return String(str || '')
+    .split(/[,;\/\n]|\s+(?:or|and|&)\s+/i)
+    .map((part) => {
+      let d = part.replace(/\D/g, '');
+      if (d.length === 10) d = '1' + d;
+      if (d.length !== 11) return null;
+      const label = (part.match(/\(([^)]*[A-Za-z][^)]*)\)/) || part.match(/([A-Za-z][A-Za-z ]*[A-Za-z])/) || [])[1] || '';
+      return { num: d, label: label.trim(), display: `${d.slice(1, 4)}-${d.slice(4, 7)}-${d.slice(7)}` };
+    })
+    .filter(Boolean)
+    .filter((p, i, all) => all.findIndex((q) => q.num === p.num) === i);
+}
+
+// bottom sheet to pick which parent number to use
+function closeSheet() { document.getElementById('sheet')?.remove(); }
+function pickNumber(a, title, onPick, opts = {}) {
+  const nums = parsePhones(a.phone);
+  if (!nums.length) return toast(`No phone number for ${first(a.name)} — add it in Setup`);
+  if (nums.length === 1 && !opts.call) return onPick(nums[0]);
+  closeSheet();
+  const el = document.createElement('div');
+  el.id = 'sheet';
+  el.innerHTML = `
+    <div class="sheet-bg" data-close></div>
+    <div class="sheet" role="dialog" aria-label="${esc(title)}">
+      <div class="sheet-title">${esc(title)}</div>
+      ${nums.map((n, i) => opts.call
+        ? `<a class="btn block ${i ? '' : 'dark'}" href="tel:+${n.num}">${UI.phone}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</a>`
+        : `<button class="btn block ${i ? '' : 'dark'}" data-i="${i}">${UI.chat}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</button>`).join('')}
+      <button class="btn ghost block" data-close>Cancel</button>
+    </div>`;
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('[data-close]')) return closeSheet();
+    const b = e.target.closest('[data-i]');
+    if (b) { closeSheet(); onPick(nums[+b.dataset.i]); }
+    if (e.target.closest('a[href^="tel:"]')) setTimeout(closeSheet, 300);
+  });
+  document.body.appendChild(el);
+}
+
 const ago = (iso) => {
   if (!iso) return '';
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -232,7 +274,7 @@ function groupScheduleMessage(t, athletes, matches) {
 
 function openMessage(channel, phone, text) {
   const enc = encodeURIComponent(text);
-  const d = digits(phone);
+  const d = phone ? (parsePhones(phone)[0]?.num || '') : '';
   let url;
   // wa.me opens the WhatsApp app when it's installed, and a WhatsApp web page (not an error) when it isn't
   if (channel === 'group') url = `https://wa.me/?text=${enc}`;
@@ -252,6 +294,7 @@ function openMessage(channel, phone, text) {
 // ---------- routing ----------
 async function route() {
   stopPoll();
+  closeSheet();
   delete app.dataset.shell; delete app.dataset.page;
   routeId++;
   const h = location.hash || '#/';
@@ -475,7 +518,9 @@ async function nextPage(id) {
         </div>`}
         <div class="tools">
           <button class="btn icon ${m.checked_in_at ? 'on' : 'ghost'}" aria-label="${m.checked_in_at ? 'Checked in for this match — tap to undo' : 'Mark checked in for this match'}" aria-pressed="${!!m.checked_in_at}" data-act="checkin" data-m="${m.id}">${ICON.check}</button>
-          ${a.phone ? `<a class="btn icon ghost" aria-label="Call ${esc(a.guardian_name || 'parent')}" href="tel:+${digits(a.phone)}">${ICON.phone}</a>` : ''}
+          ${(() => { const ph = parsePhones(a.phone); return !ph.length ? '' : ph.length === 1
+            ? `<a class="btn icon ghost" aria-label="Call ${esc(a.guardian_name || 'parent')}" href="tel:+${ph[0].num}">${ICON.phone}</a>`
+            : `<button class="btn icon ghost" aria-label="Call parent (${ph.length} numbers)" data-act="call" data-a="${a.id}">${ICON.phone}<span class="badge-n">${ph.length}</span></button>`; })()}
           <select aria-label="Result for ${esc(a.name)} match ${m.match_no}" data-act="result" data-m="${m.id}">
             ${['', 'Win', 'Loss', 'Gold', 'Silver', 'Bronze', 'Done'].map((r) => `<option value="${r}" ${(m.result || '') === r ? 'selected' : ''}>${r || 'Result…'}</option>`).join('')}
           </select>
@@ -561,18 +606,24 @@ async function nextPage(id) {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
       const a = cache.byId[m.athlete_id];
       const s = statusOf(m, cache.courts);
-      if (act === 'parent' && !a.phone) return toast(`No phone number for ${first(a.name)} — add it in Setup`);
       const text = act === 'group' ? groupMessage(m, a, cache.t, s) : parentMessage(m, a, cache.t, s);
       const col = act === 'group' ? 'group_notified_at' : 'parent_notified_at';
       const who = act === 'group' ? 'group' : 'parent';
-      const now = new Date().toISOString();
-      const nl = { ...(m.notify_log || {}) };
-      nl[who] = { ...(nl[who] || {}), [stageOf(s)]: now };
-      m.notify_log = nl;
-      openMessage(act === 'group' ? 'group' : a.channel, a.phone, text);
-      render(true);
-      sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
-      return;
+      const send = (num) => {
+        const now = new Date().toISOString();
+        const nl = { ...(m.notify_log || {}) };
+        nl[who] = { ...(nl[who] || {}), [stageOf(s)]: now };
+        m.notify_log = nl;
+        openMessage(act === 'group' ? 'group' : a.channel, num?.num, text);
+        render(true);
+        sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
+      };
+      if (act === 'group') return send(null);
+      return pickNumber(a, `Message ${first(a.name)}'s parent`, send);
+    }
+    if (act === 'call') {
+      const a = cache.byId[el.dataset.a];
+      return pickNumber(a, `Call ${first(a.name)}'s parent`, () => {}, { call: true });
     }
     if (act === 'corner') {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
@@ -802,6 +853,33 @@ async function resultsPage(id) {
 }
 
 // ---------- Setup ----------
+function athleteForm(a) {
+  return `
+  <form class="editbox stack" data-edit-a="${a.id}">
+    <div class="field"><label for="ea-n${a.id}">Athlete name</label><input id="ea-n${a.id}" name="name" value="${esc(a.name)}" required></div>
+    <div class="field"><label for="ea-g${a.id}">Parent name</label><input id="ea-g${a.id}" name="guardian_name" value="${esc(a.guardian_name || '')}"></div>
+    <div class="field"><label for="ea-p${a.id}">Parent phone(s)</label><input id="ea-p${a.id}" name="phone" type="tel" value="${esc(a.phone || '')}" placeholder="780-555-0101 (Mom), 587-555-0102 (Dad)">
+      <span class="small muted">More than one? Separate with a comma. Add (Mom)/(Dad) to label them.</span></div>
+    <div class="field"><label for="ea-c${a.id}">Send messages by</label><select id="ea-c${a.id}" name="channel">
+      <option value="whatsapp" ${a.channel !== 'sms' ? 'selected' : ''}>WhatsApp</option><option value="sms" ${a.channel === 'sms' ? 'selected' : ''}>Text (SMS)</option></select></div>
+    <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save</button><button class="btn ghost" type="button" data-act="cancel">Cancel</button></div>
+  </form>`;
+}
+function matchForm(m, t) {
+  return `
+  <form class="editbox stack" data-edit-m="${m.id}">
+    <div class="grid2">
+      <div class="field"><label for="em-e${m.id}">Event</label><select id="em-e${m.id}" name="event">${['Sparring', 'Poomsae'].map((e) => `<option ${m.event === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+      <div class="field"><label for="em-r${m.id}">Round</label><select id="em-r${m.id}" name="round"><option value="">—</option>${ROUNDS.map((r) => `<option ${m.round === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+      <div class="field"><label for="em-c${m.id}">Court</label><select id="em-c${m.id}" name="court">${Array.from({ length: t.courts }, (_, i) => i + 1).map((c) => `<option ${m.court === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label for="em-n${m.id}">Match #</label><input id="em-n${m.id}" name="match_no" type="number" min="1" inputmode="numeric" value="${m.match_no}" required></div>
+      <div class="field"><label for="em-k${m.id}">Corner</label><select id="em-k${m.id}" name="corner"><option value="">—</option><option value="Blue" ${m.corner === 'Blue' ? 'selected' : ''}>Chung · Blue</option><option value="Red" ${m.corner === 'Red' ? 'selected' : ''}>Hong · Red</option></select></div>
+      <div class="field"><label for="em-x${m.id}">Result</label><select id="em-x${m.id}" name="result">${['', 'Win', 'Loss', 'Gold', 'Silver', 'Bronze', 'Done'].map((r) => `<option value="${r}" ${(m.result || '') === r ? 'selected' : ''}>${r || '—'}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label for="em-d${m.id}">Division</label><input id="em-d${m.id}" name="division" value="${esc(m.division || '')}"></div>
+    <div class="rowx"><button class="btn dark" style="flex:1" type="submit">${UI.save}Save match</button><button class="btn ghost" type="button" data-act="cancel">Cancel</button></div>
+  </form>`;
+}
 async function setupPage(id) {
   app.onsubmit = null;
   if (!roster) roster = await must(sb.rpc('t_roster'));
@@ -839,7 +917,7 @@ async function setupPage(id) {
         </div>
         <div class="grid2">
           <div class="field"><label for="ag">Parent name</label><input id="ag"></div>
-          <div class="field"><label for="ap">Parent phone</label><input id="ap" type="tel" inputmode="tel"></div>
+          <div class="field"><label for="ap">Parent phone(s)</label><input id="ap" type="tel" inputmode="tel" placeholder="comma between numbers"></div>
         </div>
         <div class="field"><label for="ac">Send messages by</label>
           <select id="ac"><option value="whatsapp">WhatsApp</option><option value="sms">Text (SMS)</option></select></div>
@@ -884,16 +962,17 @@ async function setupPage(id) {
           <div class="ath">
             <div class="rowx" style="justify-content:space-between;align-items:flex-start">
               <div><div class="t" style="font-weight:700">${esc(a.name)}${a.belt ? ` <span class="small muted" style="font-weight:400">· ${esc(a.belt)}</span>` : ''}</div>
-                <div class="small muted">${esc(a.guardian_name || 'No parent name')} · ${a.phone ? esc(a.phone) : '<span style="color:var(--red-ink)">No phone</span>'} · ${a.channel === 'sms' ? 'Text' : 'WhatsApp'}</div></div>
-              <button class="linkbtn" data-act="channel" data-a="${a.id}">Use ${a.channel === 'sms' ? 'WhatsApp' : 'Text'}</button>
+                <div class="small muted">${esc(a.guardian_name || 'No parent name')} · ${a.channel === 'sms' ? 'Text' : 'WhatsApp'}</div>
+                <div class="phones">${(() => { const ph = parsePhones(a.phone); return ph.length ? ph.map((p) => `<span class="phone-chip">${p.label ? esc(p.label) + ' · ' : ''}${p.display}</span>`).join('') : `<span class="small" style="color:var(--red-ink)">${a.phone ? 'Phone not recognised: ' + esc(a.phone) : 'No phone'}</span>`; })()}</div></div>
+              <button class="linkbtn" data-act="edita" data-a="${a.id}">${ICON.edit}Edit</button>
             </div>
-            ${ms.map((m) => `<div class="mrow"><span>${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''} ${cornerChip(m.corner)}${m.result ? ' · <strong>' + esc(m.result) + '</strong>' : ''}</span>
-              <span class="rowx"><strong>C${m.court} · #${m.match_no}</strong><button class="linkbtn red" data-act="delm" data-m="${m.id}" aria-label="Delete match ${m.match_no}">${UI.trash}</button></span></div>`).join('') || '<div class="small muted">No matches yet</div>'}
+            ${ui.editAth === a.id ? athleteForm(a) : ''}
+            ${ms.sort((x, y) => x.match_no - y.match_no).map((m) => ui.editMatch === m.id ? matchForm(m, t) : `<div class="mrow"><span>${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''} ${cornerChip(m.corner)}${m.result ? ' · <strong>' + esc(m.result) + '</strong>' : ''}</span>
+              <span class="rowx"><strong>C${m.court} · #${m.match_no}</strong><button class="linkbtn" data-act="editm" data-m="${m.id}" aria-label="Edit match ${m.match_no}">${ICON.edit}</button><button class="linkbtn red" data-act="delm" data-m="${m.id}" aria-label="Delete match ${m.match_no}">${UI.trash}</button></span></div>`).join('') || '<div class="small muted">No matches yet</div>'}
             ${isBlackBelt(a) ? `<button class="weigh ${a.weigh_in_at ? 'ok' : 'need'}" data-act="weigh" data-a="${a.id}">${a.weigh_in_at ? '⚖ Weigh-in passed ✓ (tap to undo)' : '⚖ Weigh-in not done — tap when passed'}</button>` : ''}
             <button class="btn ${a.dayinfo_sent_at ? 'ghost' : ''} block" style="height:40px" data-act="dayinfo" data-a="${a.id}">${a.dayinfo_sent_at ? UI.check + 'Day-before info sent ' + ago(a.dayinfo_sent_at) : UI.chat + 'Send day-before info to parent'}</button>
             <div class="rowx" style="flex-wrap:wrap">
               <button class="linkbtn" data-act="copylink" data-a="${a.id}">${UI.link}Copy parent link</button>
-              <button class="linkbtn" data-act="editphone" data-a="${a.id}">${UI.phone}Edit phone</button>
               <button class="linkbtn red" data-act="dela" data-a="${a.id}">${UI.trash}Remove athlete</button>
             </div>
           </div>`;
@@ -955,6 +1034,35 @@ async function setupPage(id) {
   };
 
   app.onchange = null;
+  app.onsubmit = async (e) => {
+    const fa = e.target.closest('form[data-edit-a]');
+    const fm = e.target.closest('form[data-edit-m]');
+    if (!fa && !fm) return;
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    if (fa) {
+      const phone = String(fd.get('phone') || '').trim();
+      if (phone && !parsePhones(phone).length) return toast('Phone number not recognised — use 10 digits, e.g. 780-555-0101');
+      await must(sb.from('t_athletes').update({
+        name: String(fd.get('name')).trim(),
+        guardian_name: String(fd.get('guardian_name') || '').trim() || null,
+        phone: phone || null,
+        channel: fd.get('channel'),
+      }).eq('id', fa.dataset.editA));
+      ui.editAth = null; toast('Athlete saved');
+    } else {
+      const rec = {
+        event: fd.get('event'), round: fd.get('round') || null, corner: fd.get('corner') || null,
+        court: parseInt(fd.get('court'), 10), match_no: parseInt(fd.get('match_no'), 10),
+        result: fd.get('result') || null, division: String(fd.get('division') || '').trim() || null,
+      };
+      const clash = cache.matches.find((m) => m.id !== fm.dataset.editM && m.court === rec.court && m.match_no === rec.match_no);
+      if (clash && !confirm(`Court ${rec.court} #${rec.match_no} is already used by ${cache.byId[clash.athlete_id]?.name}. Save anyway?`)) return;
+      await must(sb.from('t_matches').update(rec).eq('id', fm.dataset.editM));
+      ui.editMatch = null; toast(`Saved C${rec.court} · #${rec.match_no}`);
+    }
+    render();
+  };
   app.onclick = async (e) => {
     const el = e.target.closest('[data-act]');
     if (!el || !cache.t) return;
@@ -973,11 +1081,11 @@ async function setupPage(id) {
       return render();
     }
     if (act === 'dayinfo') {
-      if (!a.phone) return toast(`No phone number for ${first(a.name)}`);
       const ms = cache.matches.filter((m) => m.athlete_id === a.id);
-      openMessage(a.channel, a.phone, dayBeforeMessage(cache.t, a, ms));
-      sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).eq('id', a.id).then(() => render());
-      return;
+      return pickNumber(a, `Send day-before info to ${first(a.name)}'s parent`, (num) => {
+        openMessage(a.channel, num.num, dayBeforeMessage(cache.t, a, ms));
+        sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).eq('id', a.id).then(() => render());
+      });
     }
     if (act === 'groupsched') {
       openMessage('group', null, groupScheduleMessage(cache.t, cache.athletes, cache.matches));
@@ -985,11 +1093,9 @@ async function setupPage(id) {
       return;
     }
     if (act === 'channel') { await must(sb.from('t_athletes').update({ channel: a.channel === 'sms' ? 'whatsapp' : 'sms' }).eq('id', a.id)); return render(); }
-    if (act === 'editphone') {
-      const v = prompt(`Parent phone for ${a.name}`, a.phone || '');
-      if (v === null) return;
-      await must(sb.from('t_athletes').update({ phone: v.trim() || null }).eq('id', a.id)); return render();
-    }
+    if (act === 'edita') { ui.editAth = ui.editAth === a.id ? null : a.id; ui.editMatch = null; return render(); }
+    if (act === 'editm') { ui.editMatch = el.dataset.m; ui.editAth = null; return render(); }
+    if (act === 'cancel') { ui.editAth = null; ui.editMatch = null; return render(); }
     if (act === 'copylink') {
       const link = parentLink(a.token);
       try { await navigator.clipboard.writeText(link); toast('Parent link copied'); } catch { prompt('Copy this link', link); }
