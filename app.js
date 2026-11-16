@@ -6,8 +6,18 @@ const SUPABASE_KEY = 'sb_publishable_fu5Rn91Mc4dYdvHSgo-QqQ_m2VTTjhD';
 const COACH_EMAIL = 'coach@teamhankook.app';
 const POLL_MS = 4000;
 
+// A crowded venue often hangs instead of failing — give up after a few seconds and use saved data.
+const NET_TIMEOUT_MS = 8000;
+function timedFetch(url, opts = {}) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), NET_TIMEOUT_MS);
+  if (opts.signal) opts.signal.addEventListener('abort', () => ctl.abort());
+  return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(timer));
+}
+
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: 'tourney-auth' },
+  global: { fetch: timedFetch },
 });
 
 const app = document.getElementById('app');
@@ -67,15 +77,27 @@ function pickNumber(a, title, onPick, opts = {}) {
   closeSheet();
   const el = document.createElement('div');
   el.id = 'sheet';
-  const numRow = (n, i) => `
+  // with no data, a normal text (SMS) usually still goes through — WhatsApp waits for the signal
+  const down = isDown();
+  const chs = down || opts.channel === 'sms' ? ['sms', 'whatsapp'] : ['whatsapp', 'sms'];
+  const chLabel = { sms: `${UI.chat}Text (SMS)`, whatsapp: `${UI.chat}WhatsApp` };
+  const numRow = (n, i) => (opts.text ? `
+      <div class="sheet-num">${n.label ? esc(n.label) + ' · ' : ''}${n.display}</div>
+      <div class="sheet-row">
+        ${chs.map((ch, k) => `<button class="btn block ${!i && !k ? 'dark' : ''}" data-i="${i}" data-ch="${ch}">${chLabel[ch]}</button>`).join('')}
+        <button class="btn ghost icon" data-copynum="${i}" aria-label="Copy number ${n.display}">${UI.copy}</button>
+      </div>` : `
       <div class="sheet-row">
         <button class="btn block ${i ? '' : 'dark'}" data-i="${i}">${UI.chat}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</button>
-        ${opts.text ? `<button class="btn ghost icon" data-copynum="${i}" aria-label="Copy number ${n.display}">${UI.copy}</button>` : ''}
-      </div>`;
+      </div>`);
+  const offNote = !down || opts.call ? ''
+    : opts.group ? `<div class="sheet-note">⚠ No data right now. WhatsApp will send this when the signal comes back. For an urgent call, use <strong>Message parent → Text (SMS)</strong>.</div>`
+    : opts.text ? `<div class="sheet-note">⚠ No data right now. <strong>Text (SMS)</strong> usually still goes through.</div>` : '';
   el.innerHTML = `
     <div class="sheet-bg" data-close></div>
     <div class="sheet" role="dialog" aria-label="${esc(title)}">
       <div class="sheet-title">${esc(title)}</div>
+      ${offNote}
       ${opts.call
         ? nums.map((n, i) => `<a class="btn block ${i ? '' : 'dark'}" href="tel:+${n.num}">${UI.phone}${n.label ? esc(n.label) + ' · ' : ''}${n.display}</a>`).join('')
         : opts.group ? `<button class="btn block dark" data-i="0">${UI.users}Open WhatsApp</button>`
@@ -99,7 +121,7 @@ function pickNumber(a, title, onPick, opts = {}) {
     const cn = e.target.closest('[data-copynum]');
     if (cn) { if (await copyText(nums[+cn.dataset.copynum].display)) { cn.innerHTML = UI.check; toast('Number copied'); } return; }
     const b = e.target.closest('[data-i]');
-    if (b) { closeSheet(); onPick(opts.group ? null : nums[+b.dataset.i]); }
+    if (b) { closeSheet(); onPick(opts.group ? null : nums[+b.dataset.i], b.dataset.ch); }
     if (e.target.closest('a[href^="tel:"]')) setTimeout(closeSheet, 300);
   });
   document.body.appendChild(el);
@@ -122,35 +144,113 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
+// ---------- saved data (works with no signal) ----------
+const store = {
+  get(k, d = null) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
 // ---------- connection status ----------
-let lastOk = Date.now();
+let lastOk = store.get('lastOk', Date.now());
 let offline = false;
-const isNetErr = (err) => /fetch|network|load failed|timed? ?out|offline/i.test(String(err?.message || err));
+const isNetErr = (err) => /fetch|network|load failed|timed? ?out|offline|abort/i.test(String(err?.message || err));
+const isDown = () => offline || !navigator.onLine;
 function setNet(ok) {
-  if (ok) { lastOk = Date.now(); if (!offline) return; offline = false; }
+  if (ok) { lastOk = Date.now(); store.set('lastOk', lastOk); if (!offline) return renderNet(); offline = false; }
   else offline = true;
   renderNet();
 }
 function renderNet() {
   const el = document.getElementById('net');
   if (!el) return;
-  const down = offline || !navigator.onLine;
-  el.hidden = !down;
-  if (down) el.textContent = `⚠ No connection — screen is not updating. Last update ${new Date(lastOk).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  const down = isDown();
+  const n = queue.length;
+  const parent = /^#\/p\//.test(location.hash);
+  el.hidden = !down && !n;
+  el.classList.toggle('sync', !down && !!n);
+  const changes = `${n} change${n === 1 ? '' : 's'}`;
+  if (parent) el.textContent = down ? `⚠ No signal — showing info from ${clock(lastOk)}. It updates when the signal comes back.` : '';
+  else if (down) el.textContent = `⚠ No signal — showing saved info from ${clock(lastOk)}.${n ? ` ${changes} saved on this phone, will sync later.` : ''} Text (SMS) still works.`;
+  else if (n) el.textContent = `Syncing ${changes}…`;
 }
 window.addEventListener('offline', renderNet);
-window.addEventListener('online', () => { renderNet(); });
+window.addEventListener('online', () => { offline = false; renderNet(); flush(); });
 
-async function must(promise) {
+// quiet = reading data (a saved copy is used instead); otherwise tell the coach it didn't save
+async function must(promise, quiet) {
   let res;
-  try { res = await promise; } catch (err) { setNet(false); throw err; }
+  try { res = await promise; } catch (err) { setNet(false); if (!quiet) toast('No signal — not saved. Try again when you have data.'); throw err; }
   const { data, error } = res;
   if (error) {
-    if (isNetErr(error)) setNet(false); else toast(error.message);
+    if (isNetErr(error)) { setNet(false); if (!quiet) toast('No signal — not saved. Try again when you have data.'); } else toast(error.message);
     throw error;
   }
   setNet(true);
   return data;
+}
+
+// ---------- changes waiting to sync ----------
+// Game-day taps (court numbers, results, check-ins, corners, messages sent) are saved on the phone
+// first and sent to the server in order, as soon as there is signal.
+let queue = store.get('tq', []);
+const saveQueue = () => store.set('tq', queue);
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16);
+}));
+// op: { table, kind: update|upsert|insert|delete, values, match: { col, val } or { col, in: [] }, onConflict, tid }
+function enqueue(op) {
+  queue.push({ ...op, tid: op.tid ?? cache.id ?? null, at: Date.now() });
+  saveQueue();
+  renderNet();
+  flush();
+}
+const upd = (table, id, values) => enqueue({ table, kind: 'update', values, match: Array.isArray(id) ? { col: 'id', in: id } : { col: 'id', val: id } });
+
+let flushing = null;
+function flush() {
+  if (flushing) return flushing;
+  if (!queue.length) return Promise.resolve();
+  flushing = (async () => {
+    // make sure we are really signed in first — otherwise the server would quietly ignore the changes
+    let s;
+    try { s = (await sb.auth.getSession()).data.session; } catch { s = null; }
+    if (!s) { setNet(false); return; }
+    while (queue.length) {
+      const op = queue[0];
+      let q = sb.from(op.table);
+      if (op.kind === 'update') q = q.update(op.values);
+      else if (op.kind === 'upsert') q = q.upsert(op.values, op.onConflict ? { onConflict: op.onConflict } : undefined);
+      else if (op.kind === 'insert') q = q.insert(op.values);
+      else q = q.delete();
+      if (op.match) q = op.match.in ? q.in(op.match.col, op.match.in) : q.eq(op.match.col, op.match.val);
+      let res;
+      try { res = await q; } catch (err) { res = { error: err }; }
+      if (res.error && (isNetErr(res.error) || /jwt|token/i.test(res.error.message))) { setNet(false); return; } // try again later
+      if (res.error) toast(`One change couldn't be saved: ${res.error.message}`);
+      else setNet(true);
+      queue.shift();
+      saveQueue();
+      renderNet();
+    }
+  })().catch(() => {}).finally(() => { flushing = null; renderNet(); });
+  return flushing;
+}
+
+// show changes that haven't reached the server yet on top of the data we have
+function applyPending(c) {
+  for (const op of queue) {
+    if (op.tid && op.tid !== c.id) continue;
+    if (op.table === 't_courts') { c.courts[op.values.court] = op.values.current_match; continue; }
+    if (op.table === 't_tournaments') { if (op.kind === 'update') Object.assign(c.t, op.values); continue; }
+    const list = { t_matches: c.matches, t_athletes: c.athletes, t_lineups: c.lineups }[op.table];
+    if (!list) continue;
+    const hit = (r) => (op.match?.in ? op.match.in.includes(r.id) : r.id === op.match?.val);
+    if (op.kind === 'update') list.filter(hit).forEach((r) => Object.assign(r, op.values));
+    else if (op.kind === 'delete') { for (let i = list.length - 1; i >= 0; i--) if (hit(list[i])) list.splice(i, 1); }
+    else if (op.kind === 'insert') [].concat(op.values).forEach((r) => { if (!list.some((x) => x.id === r.id)) list.push({ ...r }); });
+  }
+  c.matches.sort((x, y) => x.match_no - y.match_no);
 }
 
 function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
@@ -158,7 +258,12 @@ function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = nul
 function startPoll(rid, fn, ms) {
   if (rid !== routeId) return;
   stopPoll();
-  pollTimer = setInterval(() => { if (!document.hidden) fn().catch((err) => { if (isNetErr(err)) setNet(false); }); }, ms);
+  let running = false; // with a slow network, don't stack up refreshes
+  pollTimer = setInterval(() => {
+    if (document.hidden || running) return;
+    running = true;
+    fn().catch((err) => { if (isNetErr(err)) setNet(false); }).finally(() => { running = false; });
+  }, ms);
 }
 
 const ICON = {
@@ -468,7 +573,14 @@ function loginPage() {
 // ---------- home ----------
 async function homePage() {
   app.innerHTML = `<header class="top"><img class="logo" src="logo.png" alt="High Performance Hankook"><h1>Tournaments</h1></header><p class="pad muted">Loading…</p>`;
-  const list = await must(sb.from('t_tournaments').select('*').eq('archived', false).order('event_date', { ascending: false, nullsFirst: true }));
+  let list;
+  try {
+    list = await must(sb.from('t_tournaments').select('*').eq('archived', false).order('event_date', { ascending: false, nullsFirst: true }), true);
+    store.set('tlist', list);
+  } catch (err) {
+    list = store.get('tlist');
+    if (!list || !isNetErr(err)) throw err;
+  }
   const today = new Date().toISOString().slice(0, 10);
   app.innerHTML = `
     <header class="top">
@@ -541,20 +653,36 @@ async function homePage() {
 }
 
 // ---------- tournament data ----------
+// Every successful load is saved on the phone; with no signal the saved copy is shown instead.
 async function loadT(id) {
-  const [t, athletes, matches, courtRows, lineups, entries] = await Promise.all([
-    must(sb.from('t_tournaments').select('*').eq('id', id).single()),
-    must(sb.from('t_athletes').select('*').eq('tournament_id', id).order('name')),
-    must(sb.from('t_matches').select('*').eq('tournament_id', id).order('match_no')),
-    must(sb.from('t_courts').select('*').eq('tournament_id', id)),
-    must(sb.from('t_lineups').select('*').eq('tournament_id', id).order('created_at')),
-    must(sb.from('t_lineup_entries').select('*').eq('tournament_id', id).order('position')),
-  ]);
+  let raw;
+  try {
+    if (queue.length) await flush(); // send our own changes first so the server copy includes them
+    // not really signed in (token expired, no signal to renew it) → use the saved copy
+    const s = (await sb.auth.getSession()).data.session;
+    if (!s) throw new Error('offline: session not refreshed');
+    raw = await Promise.all([
+      must(sb.from('t_tournaments').select('*').eq('id', id).single(), true),
+      must(sb.from('t_athletes').select('*').eq('tournament_id', id).order('name'), true),
+      must(sb.from('t_matches').select('*').eq('tournament_id', id).order('match_no'), true),
+      must(sb.from('t_courts').select('*').eq('tournament_id', id), true),
+      must(sb.from('t_lineups').select('*').eq('tournament_id', id).order('created_at'), true),
+      must(sb.from('t_lineup_entries').select('*').eq('tournament_id', id).order('position'), true),
+    ]);
+    store.set('tc:' + id, raw);
+  } catch (err) {
+    const saved = store.get('tc:' + id);
+    if (!saved || !isNetErr(err)) throw err;
+    setNet(false);
+    raw = saved;
+  }
+  const [t, athletes, matches, courtRows, lineups, entries] = raw;
   lineups.forEach((l) => { l.entries = entries.filter((e) => e.lineup_id === l.id).sort((x, y) => x.position - y.position); });
   const courts = {};
   courtRows.forEach((c) => { courts[c.court] = c.current_match; });
   const byId = Object.fromEntries(athletes.map((a) => [a.id, a]));
   cache = { id, t, athletes, matches, courts, byId, lineups };
+  applyPending(cache);
   return cache;
 }
 
@@ -746,11 +874,11 @@ async function nextPage(id) {
         nl[who] = { ...(nl[who] || {}), [stageOf(s)]: now };
         m.notify_log = nl;
         render(true);
-        sb.from('t_matches').update({ [col]: now, notify_log: nl }).eq('id', m.id).then(() => render());
+        upd('t_matches', m.id, { [col]: now, notify_log: nl });
       };
-      const send = (num) => { openMessage(act === 'group' ? 'group' : a.channel, num?.num, text); log(); };
+      const send = (num, ch) => { openMessage(act === 'group' ? 'group' : ch || a.channel, num?.num, text); log(); };
       if (act === 'group') return pickNumber(a, `Post ${first(a.name)} to the group`, send, { group: true, text, onCopy: log });
-      return pickNumber(a, `Message ${first(a.name)}'s parent`, send, { text, onCopy: log });
+      return pickNumber(a, `Message ${first(a.name)}'s parent`, send, { text, onCopy: log, channel: a.channel });
     }
     if (act === 'call') {
       const a = cache.byId[el.dataset.a];
@@ -761,7 +889,7 @@ async function nextPage(id) {
       const nextC = m.corner === 'Blue' ? 'Red' : m.corner === 'Red' ? null : 'Blue';
       m.corner = nextC;
       render(true);
-      await must(sb.from('t_matches').update({ corner: nextC }).eq('id', m.id)).catch(() => render());
+      upd('t_matches', m.id, { corner: nextC });
       return;
     }
     if (act === 'weigh') {
@@ -769,7 +897,7 @@ async function nextPage(id) {
       a.weigh_in_at = a.weigh_in_at ? null : new Date().toISOString();
       render(true);
       toast(a.weigh_in_at ? `${first(a.name)} passed weigh-in` : 'Weigh-in undone');
-      await must(sb.from('t_athletes').update({ weigh_in_at: a.weigh_in_at }).eq('id', a.id)).catch(() => render());
+      upd('t_athletes', a.id, { weigh_in_at: a.weigh_in_at });
       return;
     }
     if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(true); }
@@ -778,7 +906,7 @@ async function nextPage(id) {
       m.checked_in_at = m.checked_in_at ? null : new Date().toISOString();
       render(true);
       toast(m.checked_in_at ? `${first(cache.byId[m.athlete_id]?.name)} checked in for #${m.match_no}` : 'Check-in undone');
-      await must(sb.from('t_matches').update({ checked_in_at: m.checked_in_at }).eq('id', m.id)).catch(() => render());
+      upd('t_matches', m.id, { checked_in_at: m.checked_in_at });
       return;
     }
   };
@@ -803,10 +931,8 @@ async function nextPage(id) {
     render(true);
     const medal = { Gold: ' 🥇', Silver: ' 🥈', Bronze: ' 🥉' }[result] || '';
     toast(result ? `Saved: ${result}${medal}` : 'Result cleared');
-    try {
-      await must(sb.from('t_matches').update({ result }).eq('id', el.dataset.m));
-      if (dropLater.length) await must(sb.from('t_matches').delete().in('id', dropLater));
-    } finally { render(); }
+    upd('t_matches', el.dataset.m, { result });
+    if (dropLater.length) enqueue({ table: 't_matches', kind: 'delete', match: { col: 'id', in: dropLater } });
   };
   app.onsubmit = async (e) => {
     const f = e.target.closest('form[data-next]');
@@ -814,13 +940,17 @@ async function nextPage(id) {
     e.preventDefault();
     const prev = cache.matches.find((x) => x.id === f.dataset.next);
     const fd = new FormData(f);
-    await must(sb.from('t_matches').insert({
-      tournament_id: id, athlete_id: prev.athlete_id, event: prev.event, division: prev.division,
+    // made on the phone with its own id, so it works with no signal too
+    const rec = {
+      id: newId(), tournament_id: id, athlete_id: prev.athlete_id, event: prev.event, division: prev.division,
       round: fd.get('round') || null, corner: fd.get('corner') || null,
       court: parseInt(fd.get('court'), 10), match_no: parseInt(fd.get('match_no'), 10),
-    }));
+    };
+    enqueue({ table: 't_matches', kind: 'insert', values: rec });
+    cache.matches.push({ result: null, notify_log: null, checked_in_at: null, ...rec });
+    cache.matches.sort((x, y) => x.match_no - y.match_no);
     toast(`Added ${fd.get('round') || 'next match'} · #${fd.get('match_no')}`);
-    render();
+    render(true);
   };
 
   const rid = routeId;
@@ -878,10 +1008,9 @@ async function courtsPage(id) {
   };
 
   const save = async (c, val) => {
-    cache.courts[c] = val; // show the change right away
+    cache.courts[c] = val; // show the change right away; it syncs in the background (or later, with no signal)
     render(true);
-    await must(sb.from('t_courts').upsert({ tournament_id: id, court: c, current_match: val, updated_at: new Date().toISOString() }, { onConflict: 'tournament_id,court' }));
-    await render();
+    enqueue({ table: 't_courts', kind: 'upsert', values: { tournament_id: id, court: c, current_match: val, updated_at: new Date().toISOString() }, onConflict: 'tournament_id,court' });
   };
   app.onchange = null;
   app.onsubmit = async (e) => {
@@ -1102,7 +1231,7 @@ async function poomsaePage(id) {
   };
   const setNow = async (l, pos) => {
     l.now_position = pos; render(true);
-    await must(sb.from('t_lineups').update({ now_position: pos }).eq('id', l.id)).catch(() => render());
+    upd('t_lineups', l.id, { now_position: pos });
   };
   app.onclick = async (e) => {
     const el = e.target.closest('[data-act]');
@@ -1120,7 +1249,7 @@ async function poomsaePage(id) {
       const w = { ...(l.winners || {}) }, p = +el.dataset.p;
       if (w[el.dataset.k] === p) delete w[el.dataset.k]; else w[el.dataset.k] = p;
       l.winners = w; render(true);
-      await must(sb.from('t_lineups').update({ winners: w }).eq('id', l.id)).catch(() => render());
+      upd('t_lineups', l.id, { winners: w });
       return;
     }
     if (act === 'ldel') {
@@ -1303,9 +1432,13 @@ function matchForm(m, t) {
 }
 async function setupPage(id) {
   app.onsubmit = null;
-  if (!roster) roster = await must(sb.rpc('t_roster'));
-  const render = async () => {
-    const { t, athletes, matches } = await loadT(id);
+  if (!roster) {
+    // no signal: use the saved roster this time, and try the server again next time
+    try { roster = await must(sb.rpc('t_roster'), true); store.set('roster', roster); } catch (err) { roster = null; }
+  }
+  const render = async (local) => {
+    const rosterList = roster || store.get('roster', []);
+    const { t, athletes, matches } = local && cache.id === id ? cache : await loadT(id);
     const used = new Set(athletes.map((a) => a.student_id).filter(Boolean));
     const keep = ui.matchForm || {};
     const body = `
@@ -1335,7 +1468,7 @@ async function setupPage(id) {
         <h2>Add athlete (${athletes.length})</h2>
         <div class="field"><label for="an">Student</label>
           <input id="an" list="roster" autocomplete="off" placeholder="Start typing a name" required>
-          <datalist id="roster">${roster.filter((s) => !used.has(s.id)).map((s) => `<option value="${esc(s.name)}"></option>`).join('')}</datalist>
+          <datalist id="roster">${rosterList.filter((s) => !used.has(s.id)).map((s) => `<option value="${esc(s.name)}"></option>`).join('')}</datalist>
         </div>
         <div class="grid2">
           <div class="field"><label for="ag">Parent name</label><input id="ag"></div>
@@ -1405,7 +1538,7 @@ async function setupPage(id) {
     // autofill parent details from the dojang roster
     const an = app.querySelector('#an');
     an.oninput = () => {
-      const s = roster.find((r) => r.name.toLowerCase() === an.value.trim().toLowerCase());
+      const s = rosterList.find((r) => r.name.toLowerCase() === an.value.trim().toLowerCase());
       if (s) { app.querySelector('#ag').value = s.guardian_name || ''; app.querySelector('#ap').value = s.guardian_phone || ''; }
     };
     app.querySelector('#tset').onsubmit = async (e) => {
@@ -1426,7 +1559,7 @@ async function setupPage(id) {
     app.querySelector('#addath').onsubmit = async (e) => {
       e.preventDefault();
       const name = an.value.trim();
-      const s = roster.find((r) => r.name.toLowerCase() === name.toLowerCase());
+      const s = rosterList.find((r) => r.name.toLowerCase() === name.toLowerCase());
       await must(sb.from('t_athletes').insert({
         tournament_id: id, student_id: s?.id || null, name: s?.name || name, belt: s?.belt || null,
         guardian_name: app.querySelector('#ag').value.trim() || null,
@@ -1499,22 +1632,22 @@ async function setupPage(id) {
     }
     if (act === 'weigh') {
       a.weigh_in_at = a.weigh_in_at ? null : new Date().toISOString();
-      await must(sb.from('t_athletes').update({ weigh_in_at: a.weigh_in_at }).eq('id', a.id));
+      upd('t_athletes', a.id, { weigh_in_at: a.weigh_in_at });
       toast(a.weigh_in_at ? `${first(a.name)} passed weigh-in` : 'Weigh-in undone');
-      return render();
+      return render(true);
     }
     if (act === 'dayinfo') {
       const sibs = siblingsOf(a, cache.athletes);
       const text = dayBeforeMessage(cache.t, sibs.map((s) => ({ a: s, ms: cache.matches.filter((m) => m.athlete_id === s.id) })));
-      const mark = () => sb.from('t_athletes').update({ dayinfo_sent_at: new Date().toISOString() }).in('id', sibs.map((s) => s.id)).then(() => render());
-      return pickNumber(a, `Send day-before info to ${andList(sibs.map((s) => first(s.name)))}'s parent`, (num) => { openMessage(a.channel, num.num, text); mark(); }, { text, onCopy: mark });
+      const mark = () => { const now = new Date().toISOString(); sibs.forEach((s) => { s.dayinfo_sent_at = now; }); upd('t_athletes', sibs.map((s) => s.id), { dayinfo_sent_at: now }); render(true); };
+      return pickNumber(a, `Send day-before info to ${andList(sibs.map((s) => first(s.name)))}'s parent`, (num, ch) => { openMessage(ch || a.channel, num.num, text); mark(); }, { text, onCopy: mark, channel: a.channel });
     }
     if (act === 'groupsched') {
       const text = groupScheduleMessage(cache.t, cache.athletes, cache.matches);
-      const mark = () => sb.from('t_tournaments').update({ group_schedule_sent_at: new Date().toISOString() }).eq('id', id).then(() => render());
+      const mark = () => { const now = new Date().toISOString(); cache.t.group_schedule_sent_at = now; upd('t_tournaments', id, { group_schedule_sent_at: now }); render(true); };
       return pickNumber(null, 'Post the full schedule to the group', () => { openMessage('group', null, text); mark(); }, { group: true, text, onCopy: mark });
     }
-    if (act === 'channel') { await must(sb.from('t_athletes').update({ channel: a.channel === 'sms' ? 'whatsapp' : 'sms' }).eq('id', a.id)); return render(); }
+    if (act === 'channel') { a.channel = a.channel === 'sms' ? 'whatsapp' : 'sms'; upd('t_athletes', a.id, { channel: a.channel }); return render(true); }
     if (act === 'edita') { ui.editAth = ui.editAth === a.id ? null : a.id; ui.editMatch = null; return render(); }
     if (act === 'editm') { ui.editMatch = el.dataset.m; ui.editAth = null; return render(); }
     if (act === 'cancel') { ui.editAth = null; ui.editMatch = null; return render(); }
@@ -1533,11 +1666,24 @@ async function setupPage(id) {
 async function parentPage(token) {
   app.onclick = null; app.onchange = null; app.onsubmit = null;
   const render = async () => {
+    // no signal: keep what's on screen, or show the copy saved on this phone last time
+    const fromSaved = () => {
+      setNet(false);
+      const saved = store.get('fam:' + token);
+      if (!saved || app.dataset.page) return null;
+      lastOk = saved.at; renderNet();
+      return saved.fam;
+    };
     let res;
-    try { res = await sb.rpc('t_family_view', { p_token: token }); } catch (err) { setNet(false); return; }
-    const { data: fam, error } = res;
-    if (error && isNetErr(error)) { setNet(false); return; }
-    setNet(true);
+    try { res = await sb.rpc('t_family_view', { p_token: token }); } catch (err) { res = { error: err }; }
+    let { data: fam, error } = res;
+    if (error && isNetErr(error)) {
+      fam = fromSaved(); error = null;
+      if (!fam) return;
+    } else if (!error) {
+      setNet(true);
+      store.set('fam:' + token, { at: Date.now(), fam });
+    }
     // brothers & sisters (same parent name, same tournament) share one page; the linked child shows first
     const kids = Array.isArray(fam) ? fam.filter(Boolean) : [];
     const data = kids.find((k) => k.me === ui.kid) || kids[0];
@@ -1684,12 +1830,24 @@ app.addEventListener('submit', (e) => {
 }, true);
 
 // ---------- boot ----------
-sb.auth.onAuthStateChange((_event, s) => {
+sb.auth.onAuthStateChange((event, s) => {
+  // with no signal the sign-in can't be renewed; stay signed in on this phone until a real sign-out
+  if (!s && event !== 'SIGNED_OUT') return;
   const had = !!session;
   session = s;
   if (had !== !!s) route();
 });
 const { data } = await sb.auth.getSession();
-session = data.session;
+session = data.session || store.get('tourney-auth'); // saved sign-in, used when offline
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // save the library files this visit already loaded, so the very next open works with no signal
+  navigator.serviceWorker.ready.then((reg) => {
+    const libs = performance.getEntriesByType('resource').map((e) => e.name).filter((u) => u.startsWith('https://cdn.jsdelivr.net/'));
+    reg.active?.postMessage({ cacheUrls: libs });
+  }).catch(() => {});
+}
+renderNet();
+flush();
 window.addEventListener('hashchange', route);
 route();

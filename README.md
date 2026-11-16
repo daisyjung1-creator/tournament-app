@@ -15,3 +15,10 @@ Plain HTML/CSS/JS, no build step. Data lives in the Dojang Portal Supabase proje
 
 ## Deploy
 Drag this folder (or the zip) onto https://app.netlify.com/drop, or connect a GitHub repo with publish directory `.` and no build command.
+
+## No signal at the venue
+- Open the app (and each tournament) once on Wi-Fi before the day. It is then saved on the phone and opens with no data.
+- With no signal the app shows the last saved info and a red bar. Court numbers, results, check-ins, corners, weigh-ins and "messaged" marks are saved on the phone and sync automatically when the signal returns.
+- Message parent offers **Text (SMS)** and **WhatsApp**; with no data, Text is shown first because SMS usually still goes through.
+- Parent pages show the last saved info if the parent opened their link once before.
+- Setup changes (adding athletes, matches, settings) still need a connection.
