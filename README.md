@@ -22,3 +22,6 @@ Drag this folder (or the zip) onto https://app.netlify.com/drop, or connect a Gi
 - Message parent offers **Text (SMS)** and **WhatsApp**; with no data, Text is shown first because SMS usually still goes through.
 - Parent pages show the last saved info if the parent opened their link once before.
 - Setup changes (adding athletes, matches, settings) still need a connection.
+
+## Delayed matches
+If the court table skips a match (e.g. #24 delayed, #32 goes first): set the court to 32. #24 then shows "Not played yet — mark as delayed". Tap it and #24 moves to the **Delayed** section (and the parent page says it can be called any time). When it's called, set the court to 24 — it goes back to "On the mat" by itself. Then set the court to the next number (e.g. 33) and carry on with +.

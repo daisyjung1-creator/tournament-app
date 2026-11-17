@@ -275,6 +275,7 @@ const ICON = {
 };
 
 const UI = {
+  pause: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
   copy: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   order: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>',
   users: '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg>',
@@ -297,6 +298,8 @@ const UI = {
 function statusOf(m, courts) {
   if (m.result) return { key: 'done', label: m.result === 'Done' ? 'DONE' : m.result.toUpperCase(), away: Infinity };
   const cur = courts[m.court];
+  // delayed: the court moved on without this match; it can be called back any time
+  if (m.delayed && cur !== m.match_no) return { key: 'delayed', label: 'DELAYED', away: null };
   if (cur == null) return { key: 'wait', label: 'NOT STARTED', away: null };
   const away = m.match_no - cur;
   if (away < 0) return { key: 'past', label: 'CHECK RESULT', away };
@@ -304,6 +307,9 @@ function statusOf(m, courts) {
   if (away === 1) return { key: 'deck', label: 'ON DECK', away };
   return { key: away <= 3 ? 'soon1' : 'soon', label: `${away} AWAY`, away };
 }
+
+// for sorting: a delayed match sits right after "on the mat"
+const sortAway = (s) => (s.key === 'delayed' ? 0.5 : s.away);
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -338,9 +344,9 @@ const CHECKIN_AT = 3; // 2–3 matches away: check in at the ring; more than tha
 const GEAR = '✅ Protective gear on under the uniform\n✅ Mouthguard\n✅ Water bottle';
 
 // which message stage a match is in
-const stageOf = (s) => (s.away == null ? 'schedule' : s.away === 1 ? 'next' : s.away <= CHECKIN_AT ? 'checkin' : 'warmup');
-const STAGE_LABEL = { schedule: 'schedule', warmup: 'warm-up', checkin: 'check-in', next: 'up next' };
-const STAGE_ORDER = ['schedule', 'warmup', 'checkin', 'next'];
+const stageOf = (s) => (s.key === 'delayed' ? 'delayed' : s.away == null ? 'schedule' : s.away === 1 ? 'next' : s.away <= CHECKIN_AT ? 'checkin' : 'warmup');
+const STAGE_LABEL = { schedule: 'schedule', warmup: 'warm-up', checkin: 'check-in', next: 'up next', delayed: 'delayed' };
+const STAGE_ORDER = ['schedule', 'warmup', 'checkin', 'next', 'delayed'];
 const logLine = (who, entries) => {
   const parts = STAGE_ORDER.filter((k) => entries?.[k]).map((k) => `${STAGE_LABEL[k]} ${ago(entries[k])}`);
   return parts.length ? `${who}: ${parts.join(' · ')}` : '';
@@ -350,7 +356,8 @@ function groupMessage(m, a, t, s) {
   const who = shortName(a.name).toUpperCase();
   const where = `Court ${m.court}, Match #${m.match_no} (${evLabel(m)})${m.corner ? ' · ' + cornerMsg(m.corner) : ''}`;
   let line;
-  if (s.away === 1) line = `🔴 ${who} is UP NEXT — ${where}. Please come to Court ${m.court} now and hand over to the coach.`;
+  if (s.key === 'delayed') line = `⏸ ${who} — Match #${m.match_no} on Court ${m.court} is DELAYED${m.corner ? ' · ' + cornerMsg(m.corner) : ''}. It can be called at any time, so please stay at Court ${m.court} with gear on and stay with the coach.\n\n${GEAR}\n`;
+  else if (s.away === 1) line = `🔴 ${who} is UP NEXT — ${where}. Please come to Court ${m.court} now and hand over to the coach.`;
   else if (s.away >= 2 && s.away <= CHECKIN_AT) line = `🟠 ${who} — ${s.away} matches away! ${where}. Please check in at Court ${m.court} and hand over to the coach.\n\n${GEAR}\n`;
   else if (s.away > CHECKIN_AT) line = `🟡 ${who} — coming up soon! ${where}, about ${s.away} matches away. Please start warming up.\n\n${GEAR}\n`;
   else line = `🟡 ${who} — ${where}. We'll post again as the court moves.\n\n${GEAR}\n`;
@@ -361,7 +368,8 @@ function parentMessage(m, a, t, s) {
   const child = first(a.name);
   const hi = first(a.guardian_name) ? `Hi ${first(a.guardian_name)}!` : 'Hi!';
   let body;
-  if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please bring ${child} to Court ${m.court} right away and hand ${child} over to the coach.`;
+  if (s.key === 'delayed') body = `${child}'s match (#${m.match_no}, ${evLabel(m)}) on Court ${m.court} has been DELAYED. It can be called at any time, so please keep ${child} at Court ${m.court} with the coach, gear on and ready.`;
+  else if (s.away === 1) body = `${child} is UP NEXT on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please bring ${child} to Court ${m.court} right away and hand ${child} over to the coach.`;
   else if (s.away >= 2 && s.away <= CHECKIN_AT) body = `${child} is ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please bring ${child} to Court ${m.court} now to check in and hand ${child} over to the coach.`;
   else if (s.away > CHECKIN_AT) body = `${child}'s match is coming up soon: about ${s.away} matches away on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please start warming up now.`;
   else body = `${child} is scheduled on Court ${m.court} (Match #${m.match_no}, ${evLabel(m)}). Please stay close to the waiting area.`;
@@ -731,12 +739,13 @@ async function nextPage(id) {
       .map((m) => ({ m, a: byId[m.athlete_id], s: statusOf(m, courts) }))
       .filter((r) => r.a);
     const active = rows.filter((r) => r.s.key !== 'done');
-    const rank = (r) => (r.s.away == null ? 1000 + r.m.match_no : r.s.away < 0 ? -1 : r.s.away);
+    const rank = (r) => (r.s.key === 'delayed' ? 0.5 : r.s.away == null ? 1000 + r.m.match_no : r.s.away < 0 ? -1 : r.s.away);
     active.sort((x, y) => rank(x) - rank(y) || x.m.court - y.m.court);
     const onMat = active.filter((r) => r.s.key === 'now');
     const needResult = active.filter((r) => r.s.key === 'past');
+    const delayedL = active.filter((r) => r.s.key === 'delayed');
     const soon = active.filter((r) => r.s.away != null && r.s.away >= 1 && r.s.away <= t.group_alert_at);
-    const later = active.filter((r) => !onMat.includes(r) && !needResult.includes(r) && !soon.includes(r));
+    const later = active.filter((r) => !onMat.includes(r) && !needResult.includes(r) && !delayedL.includes(r) && !soon.includes(r));
     const done = rows.filter((r) => r.s.key === 'done');
     ui.expanded = ui.expanded || new Set();
 
@@ -756,12 +765,14 @@ async function nextPage(id) {
         logLine('Parent', nl.parent),
         logLine('Group', nl.group),
       ].filter(Boolean).join('<br>');
-      const kind = s.key === 'now' ? 'live' : s.key === 'deck' ? 'deck' : s.key === 'past' ? 'needres' : s.key === 'soon1' ? 'hot' : '';
+      const kind = s.key === 'now' ? 'live' : s.key === 'deck' ? 'deck' : s.key === 'past' ? 'needres' : s.key === 'delayed' ? 'delayed' : s.key === 'soon1' ? 'hot' : '';
       return `
       <article class="card ${kind}">
         ${s.key === 'now' ? `<div class="live-tag"><span class="pulse" aria-hidden="true"></span>ON THE MAT · COURT ${m.court}</div>` : ''}
         ${s.key === 'deck' ? `<div class="deck-tag">NEXT UP · COURT ${m.court}</div>` : ''}
-        ${s.key === 'past' ? `<div class="res-tag">Match passed — enter the result</div>` : ''}
+        ${s.key === 'past' ? `<div class="res-tag">Match passed — enter the result</div>
+        <button class="btn ghost block delay-btn" data-act="delay" data-m="${m.id}">${UI.pause}Not played yet — mark as delayed</button>` : ''}
+        ${s.key === 'delayed' ? `<div class="delay-tag">${UI.pause}DELAYED · COURT ${m.court} — can be called any time</div>` : ''}
         <div class="head">
           <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(evLabel(m))}${m.division ? ' · ' + esc(m.division) : ''}</div></div>
           <div class="where">Court ${m.court} · #${m.match_no}<br><span class="status ${s.key}">${s.label}</span>
@@ -785,6 +796,8 @@ async function nextPage(id) {
           </select>
         </div>
         ${log ? `<div class="log">${log}</div>` : ''}
+        ${s.key === 'delayed' ? `<button class="linkbtn" data-act="delay" data-m="${m.id}">Undo delayed</button>`
+          : ['deck', 'soon1', 'soon'].includes(s.key) ? `<button class="linkbtn" data-act="delay" data-m="${m.id}">${UI.pause}Match delayed?</button>` : ''}
       </article>`;
     };
 
@@ -796,7 +809,7 @@ async function nextPage(id) {
       return `
       <button class="wrow" data-act="expand" data-m="${m.id}" aria-label="${esc(a.name)}, ${esc(evLabel(m))}, court ${m.court} match ${m.match_no}, ${s.label}. Tap for actions">
         <span class="wname">${esc(a.name)}<small>${esc(evLabel(m))}${m.corner ? ' · ' + (m.corner === 'Blue' ? 'Chung' : 'Hong') : ''}${sent ? ' · messaged' : ''}</small></span>
-        <span class="wwhere">C${m.court} · #${m.match_no}<small>${s.away == null ? 'not started' : s.away + ' away'}</small></span>
+        <span class="wwhere">C${m.court} · #${m.match_no}<small>${s.key === 'delayed' ? 'delayed' : s.away == null ? 'not started' : s.away + ' away'}</small></span>
       </button>`;
     };
 
@@ -831,12 +844,13 @@ async function nextPage(id) {
       ${matches.length ? `
       <div class="counts" role="group" aria-label="Jump to section">
         <button class="cnt live" data-act="jump" data-to="sec-now" ${onMat.length ? '' : 'disabled'}><strong>${onMat.length}</strong>On mat</button>
-        <button class="cnt next" data-act="jump" data-to="sec-next" ${soon.length ? '' : 'disabled'}><strong>${soon.length}</strong>Up next</button>
+        <button class="cnt next" data-act="jump" data-to="sec-next" ${soon.length + delayedL.length ? '' : 'disabled'}><strong>${soon.length + delayedL.length}</strong>Up next</button>
         <button class="cnt" data-act="jump" data-to="sec-wait" ${later.length ? '' : 'disabled'}><strong>${later.length}</strong>Waiting</button>
         <button class="cnt" data-act="jump" data-to="sec-done" ${done.length ? '' : 'disabled'}><strong>${done.length}</strong>Done</button>
       </div>` : ''}
       ${onMat.length ? `<h2 class="sec live" id="sec-now"><span class="pulse" aria-hidden="true"></span>On the mat now<span class="n">${onMat.length}</span></h2><div class="list">${onMat.map(card).join('')}</div>` : ''}
       ${needResult.length ? `<h2 class="sec warn">Needs a result<span class="n">${needResult.length}</span></h2><div class="list">${needResult.map(card).join('')}</div>` : ''}
+      ${delayedL.length ? `<h2 class="sec delayed" ${soon.length ? '' : 'id="sec-next"'}>Delayed<span class="n">${delayedL.length}</span><small>can be called any time</small></h2><div class="list">${delayedL.map(card).join('')}</div>` : ''}
       ${needNext.length ? `<h2 class="sec next">Next round needed<span class="n">${needNext.length}</span></h2><div class="list">${needNext.map(nextForm).join('')}</div>` : ''}
       ${soon.length ? `<h2 class="sec next" id="sec-next">Up next<span class="n">${soon.length}</span><small>within ${t.group_alert_at} matches</small></h2><div class="list">${soon.map(card).join('')}</div>` : ''}
       ${later.length ? `<h2 class="sec" id="sec-wait">Waiting<span class="n">${later.length}</span><small>tap a name for actions</small></h2><div class="list tight">${later.map(row).join('')}</div>` : ''}
@@ -900,6 +914,14 @@ async function nextPage(id) {
       upd('t_athletes', a.id, { weigh_in_at: a.weigh_in_at });
       return;
     }
+    if (act === 'delay') {
+      const m = cache.matches.find((x) => x.id === el.dataset.m);
+      m.delayed = !m.delayed;
+      render(true);
+      toast(m.delayed ? `#${m.match_no} marked delayed — it stays in Up Next until it's called` : `#${m.match_no} no longer delayed`);
+      upd('t_matches', m.id, { delayed: m.delayed });
+      return;
+    }
     if (act === 'skipnext') { ui.skipNext = [...(ui.skipNext || []), el.dataset.m]; return render(true); }
     if (act === 'checkin') {
       const m = cache.matches.find((x) => x.id === el.dataset.m);
@@ -925,13 +947,13 @@ async function nextPage(id) {
     if (m?.round === 'Final' && result === 'Win') result = 'Gold';
     if (m?.round === 'Final' && result === 'Loss') result = 'Silver';
     // show it right away, save in the background
-    if (m) m.result = result;
+    if (m) { m.result = result; if (result) m.delayed = false; }
     if (dropLater.length) cache.matches = cache.matches.filter((o) => !dropLater.includes(o.id));
     document.activeElement?.blur();
     render(true);
     const medal = { Gold: ' 🥇', Silver: ' 🥈', Bronze: ' 🥉' }[result] || '';
     toast(result ? `Saved: ${result}${medal}` : 'Result cleared');
-    upd('t_matches', el.dataset.m, { result });
+    upd('t_matches', el.dataset.m, result ? { result, delayed: false } : { result });
     if (dropLater.length) enqueue({ table: 't_matches', kind: 'delete', match: { col: 'id', in: dropLater } });
   };
   app.onsubmit = async (e) => {
@@ -974,8 +996,10 @@ async function courtsPage(id) {
       const upcoming = matches
         .filter((m) => m.court === c && !m.result)
         .sort((x, y) => x.match_no - y.match_no);
-      const nxt = upcoming[0];
-      const near = nxt && cur != null && nxt.match_no - cur <= t.group_alert_at;
+      // delayed matches wait on the side until the court number comes back to them
+      const late = upcoming.filter((m) => m.delayed && m.match_no !== cur);
+      const nxt = upcoming.filter((m) => !late.includes(m))[0];
+      const near = (nxt && cur != null && nxt.match_no - cur <= t.group_alert_at) || late.length > 0;
       const live = nxt && cur != null && nxt.match_no === cur;
       const nextTxt = nxt
         ? `${esc(shortName(byId[nxt.athlete_id]?.name))} at #${nxt.match_no}${cur != null ? ` (${nxt.match_no < cur ? 'add result' : nxt.match_no - cur === 0 ? 'on the mat' : nxt.match_no - cur === 1 ? 'on deck' : (nxt.match_no - cur) + ' away'})` : ''}`
@@ -992,6 +1016,7 @@ async function courtsPage(id) {
             </div>
           </form>
           <div class="next">${nextTxt}</div>
+          ${late.map((m) => `<div class="next late">${UI.pause}Delayed: ${esc(shortName(byId[m.athlete_id]?.name))} #${m.match_no} — type ${m.match_no} + Set when it's called</div>`).join('')}
           <div class="rowx">
             <button class="btn ghost icon" type="button" data-act="dec" data-c="${c}" aria-label="Previous match on court ${c}" ${cur == null ? 'disabled' : ''}>${UI.minus}</button>
             <button class="btn dark" type="button" style="flex:1" data-act="inc" data-c="${c}" aria-label="Next match on court ${c}">${UI.plus}<span>Next</span></button>
@@ -1008,6 +1033,11 @@ async function courtsPage(id) {
   };
 
   const save = async (c, val) => {
+    // the court came back to a delayed match: it's on the mat now, so it's no longer delayed
+    cache.matches.filter((m) => m.court === c && m.delayed && m.match_no === val && !m.result).forEach((m) => {
+      m.delayed = false;
+      upd('t_matches', m.id, { delayed: false });
+    });
     cache.courts[c] = val; // show the change right away; it syncs in the background (or later, with no signal)
     render(true);
     enqueue({ table: 't_courts', kind: 'upsert', values: { tournament_id: id, court: c, current_match: val, updated_at: new Date().toISOString() }, onConflict: 'tournament_id,court' });
@@ -1697,12 +1727,12 @@ async function parentPage(token) {
       if (s.key === 'past') s.label = 'FINISHING';
       return { ...m, s };
     });
-    const nextOf = (list) => list.filter((m) => m.s.key !== 'done').sort((x, y) => (x.s.away ?? 999) - (y.s.away ?? 999) || x.match_no - y.match_no)[0];
+    const nextOf = (list) => list.filter((m) => m.s.key !== 'done').sort((x, y) => (sortAway(x.s) ?? 999) - (sortAway(y.s) ?? 999) || x.match_no - y.match_no)[0];
     const ms = withStatus(data);
     const nxt = nextOf(ms);
     const tabs = kids.length > 1 ? `<nav class="kid-tabs" aria-label="Your athletes">${kids.map((k) => {
       const n = nextOf(withStatus(k));
-      const hot = n && (n.s.key === 'now' || n.s.key === 'deck' || (n.s.away != null && n.s.away <= CHECKIN_AT));
+      const hot = n && (n.s.key === 'now' || n.s.key === 'deck' || n.s.key === 'delayed' || (n.s.away != null && n.s.away <= CHECKIN_AT));
       const sub = !k.matches.length ? 'No matches yet' : n ? `C${n.court} · #${n.match_no}` : 'All done';
       return `<button class="kid-tab${k.me === data.me ? ' on' : ''}" data-kid="${k.me}" aria-pressed="${k.me === data.me}">
         <span>${hot ? '<i class="hot" aria-label="soon"></i>' : ''}${esc(first(k.athlete))}</span><small>${esc(sub)}</small></button>`;
@@ -1712,6 +1742,7 @@ async function parentPage(token) {
     if (nxt) {
       const s = nxt.s;
       if (s.key === 'now') msg = `${childFirst} is on the mat now.`;
+      else if (s.key === 'delayed') msg = `This match has been delayed and can be called at any time. Please keep ${childFirst} at Court ${nxt.court} with the coach, gear on and ready.`;
       else if (s.key === 'deck') msg = `${childFirst} is next. Please bring ${childFirst} to Court ${nxt.court} right away and hand over to the coach.`;
       else if (s.away != null && s.away >= 2 && s.away <= CHECKIN_AT) msg = `${s.away} matches to go. Please check in at Court ${nxt.court} and hand ${childFirst} over to the coach.`;
       else if (s.key === 'past') msg = `This match should be finishing. Your coaches will update the result shortly.`;
