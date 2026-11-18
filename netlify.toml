@@ -6,3 +6,9 @@
   [headers.values]
     X-Robots-Tag = "noindex"
     Referrer-Policy = "no-referrer"
+
+# the offline helper must always be checked for updates
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

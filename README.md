@@ -15,3 +15,13 @@ Plain HTML/CSS/JS, no build step. Data lives in the Dojang Portal Supabase proje
 
 ## Deploy
 Drag this folder (or the zip) onto https://app.netlify.com/drop, or connect a GitHub repo with publish directory `.` and no build command.
+
+## No signal at the venue
+- Open the app (and each tournament) once on Wi-Fi before the day. It is then saved on the phone and opens with no data.
+- With no signal the app shows the last saved info and a red bar. Court numbers, results, check-ins, corners, weigh-ins and "messaged" marks are saved on the phone and sync automatically when the signal returns.
+- Message parent offers **Text (SMS)** and **WhatsApp**; with no data, Text is shown first because SMS usually still goes through.
+- Parent pages show the last saved info if the parent opened their link once before.
+- Setup changes (adding athletes, matches, settings) still need a connection.
+
+## Delayed matches
+If the court table skips a match (e.g. #24 delayed, #32 goes first): set the court to 32. #24 then shows "Not played yet — mark as delayed". Tap it and #24 moves to the **Delayed** section (and the parent page says it can be called any time). When it's called, set the court to 24 — it goes back to "On the mat" by itself. Then set the court to the next number (e.g. 33) and carry on with +.
